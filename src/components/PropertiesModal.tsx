@@ -106,8 +106,8 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '560px' }}>
+    <div className="modal-overlay">
+      <div className="modal-content" style={{ maxWidth: '560px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <div>
             <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Properties</h2>

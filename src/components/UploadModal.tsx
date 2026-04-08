@@ -136,8 +136,8 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '620px' }}>
+    <div className="modal-overlay">
+      <div className="modal-content" style={{ maxWidth: '620px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Upload Document</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>

@@ -39,8 +39,8 @@ export default function HistoryModal({ document: doc, onClose }: HistoryModalPro
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '640px' }}>
+    <div className="modal-overlay">
+      <div className="modal-content" style={{ maxWidth: '640px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <div>
             <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Revision History</h2>
