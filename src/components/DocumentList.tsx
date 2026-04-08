@@ -8,7 +8,7 @@ import PropertiesModal from './PropertiesModal'
 import RevisionModal from './RevisionModal'
 import HistoryModal from './HistoryModal'
 import UploadModal from './UploadModal'
-import { Search, Upload, Filter, X, ChevronDown } from 'lucide-react'
+import { Search, Upload, Filter, X } from 'lucide-react'
 import { format } from 'date-fns'
 import type { Document, DocumentCategory } from '@/types'
 
@@ -39,6 +39,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
   const [showProperties, setShowProperties] = useState<Document | null>(null)
   const [showRevision, setShowRevision] = useState<Document | null>(null)
   const [showHistory, setShowHistory] = useState<Document | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Document | null>(null)
 
   // Context menu
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; doc: Document } | null>(null)
@@ -58,14 +59,9 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       .neq('status', 'archived')
       .order('created_at', { ascending: false })
 
-    // Apply filters
     if (statusFilter) query = query.eq('status', statusFilter)
     if (categoryFilter) query = query.eq('category_id', categoryFilter)
-
-    // Project filter
-    if (projectFilter) {
-      query = query.ilike('project', `%${projectFilter}%`)
-    }
+    if (projectFilter) query = query.ilike('project', `%${projectFilter}%`)
 
     const { data, count, error } = await query.limit(100)
 
@@ -77,7 +73,6 @@ export default function DocumentList({ filterCategory, filterProject }: Document
 
     let filtered = data || []
 
-    // Client-side search for part_number (since it's in a junction table)
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toUpperCase()
       if (searchType === 'part_number') {
@@ -101,9 +96,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
     setLoading(false)
   }, [statusFilter, categoryFilter, projectFilter, searchQuery, searchType])
 
-  useEffect(() => {
-    fetchDocuments()
-  }, [fetchDocuments])
+  useEffect(() => { fetchDocuments() }, [fetchDocuments])
 
   useEffect(() => {
     supabase.from('document_categories').select('*').eq('is_active', true).order('name')
@@ -123,7 +116,6 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       a.download = doc.file_name
       a.click()
     }
-    // Audit
     await supabase.from('audit_log').insert({
       user_id: profile!.id,
       action: 'download',
@@ -135,25 +127,15 @@ export default function DocumentList({ filterCategory, filterProject }: Document
   const handleVerify = async (doc: Document) => {
     const { error } = await supabase
       .from('documents')
-      .update({
-        status: 'verification',
-        verified_by: profile!.id,
-        verified_at: new Date().toISOString(),
-      })
+      .update({ status: 'verification', verified_by: profile!.id, verified_at: new Date().toISOString() })
       .eq('id', doc.id)
 
-    if (error) {
-      showToast(error.message, 'error')
-      return
-    }
+    if (error) { showToast(error.message, 'error'); return }
 
     await supabase.from('audit_log').insert({
-      user_id: profile!.id,
-      action: 'verify',
-      document_id: doc.id,
+      user_id: profile!.id, action: 'verify', document_id: doc.id,
       details: { document_number: doc.document_number },
     })
-
     showToast(`${doc.document_number} verified`, 'success')
     fetchDocuments()
   }
@@ -167,37 +149,61 @@ export default function DocumentList({ filterCategory, filterProject }: Document
 
     const { error } = await supabase
       .from('documents')
-      .update({
-        status: 'released',
-        released_by: profile!.id,
-        released_at: new Date().toISOString(),
-      })
+      .update({ status: 'released', released_by: profile!.id, released_at: new Date().toISOString() })
       .eq('id', doc.id)
 
-    if (error) {
-      showToast(error.message, 'error')
-      return
-    }
+    if (error) { showToast(error.message, 'error'); return }
 
     await supabase.from('audit_log').insert({
-      user_id: profile!.id,
-      action: 'release',
-      document_id: doc.id,
+      user_id: profile!.id, action: 'release', document_id: doc.id,
       details: { document_number: doc.document_number },
     })
-
     showToast(`${doc.document_number} released`, 'success')
     fetchDocuments()
+  }
+
+  const handleDelete = async (doc: Document) => {
+    try {
+      // 1. Delete file from storage
+      await supabase.storage.from('documents').remove([doc.file_path])
+
+      // 2. Delete revision files from storage
+      const { data: revisions } = await supabase
+        .from('document_revisions')
+        .select('file_path')
+        .eq('document_id', doc.id)
+      if (revisions && revisions.length > 0) {
+        await supabase.storage.from('documents').remove(revisions.map(r => r.file_path))
+      }
+
+      // 3. Audit log BEFORE deleting (so document_id reference still valid for logging)
+      await supabase.from('audit_log').insert({
+        user_id: profile!.id,
+        action: 'archive',
+        document_id: doc.id,
+        details: {
+          action: 'deleted',
+          document_number: doc.document_number,
+          title: doc.title,
+          part_numbers: doc.document_part_numbers?.map((p: any) => p.part_number),
+        },
+      })
+
+      // 4. Delete related records then document (cascade handles revisions & part_numbers)
+      const { error } = await supabase.from('documents').delete().eq('id', doc.id)
+      if (error) throw error
+
+      showToast(`${doc.document_number} deleted`, 'success')
+      fetchDocuments()
+    } catch (err: any) {
+      showToast(err.message || 'Delete failed', 'error')
+    }
   }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh' }}>
       {/* Header */}
-      <div style={{
-        padding: '16px 24px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--bg-secondary)',
-      }}>
+      <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
         {/* Search Bar */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -231,30 +237,18 @@ export default function DocumentList({ filterCategory, filterProject }: Document
         {/* Filters */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <Filter size={14} color="var(--text-secondary)" />
-          <select
-            value={categoryFilter}
-            onChange={e => setCategoryFilter(e.target.value)}
-            style={{ width: '180px', fontSize: '12px', padding: '5px 8px' }}
-          >
+          <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} style={{ width: '180px', fontSize: '12px', padding: '5px 8px' }}>
             <option value="">All Categories</option>
             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
-            style={{ width: '140px', fontSize: '12px', padding: '5px 8px' }}
-          >
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ width: '140px', fontSize: '12px', padding: '5px 8px' }}>
             <option value="">All Statuses</option>
             <option value="processing">Processing</option>
             <option value="verification">Verification</option>
             <option value="released">Released</option>
           </select>
           {(categoryFilter || statusFilter || searchQuery) && (
-            <button
-              className="btn btn-secondary"
-              style={{ padding: '4px 8px', fontSize: '11px' }}
-              onClick={() => { setCategoryFilter(''); setStatusFilter(''); setSearchQuery('') }}
-            >
+            <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => { setCategoryFilter(''); setStatusFilter(''); setSearchQuery('') }}>
               <X size={12} /> Clear
             </button>
           )}
@@ -271,26 +265,23 @@ export default function DocumentList({ filterCategory, filterProject }: Document
             <tr>
               <th style={{ width: '130px' }}>Doc Number</th>
               <th>Title</th>
-              <th style={{ width: '120px' }}>Rev</th>
-              <th style={{ width: '180px' }}>Part Numbers</th>
-              <th style={{ width: '160px' }}>Category</th>
-              <th style={{ width: '110px' }}>Status</th>
+              <th style={{ width: '70px' }}>Rev</th>
+              <th style={{ width: '160px' }}>Part Numbers</th>
+              <th style={{ width: '140px' }}>Category</th>
+              <th style={{ width: '100px' }}>MFR</th>
+              <th style={{ width: '100px' }}>Status</th>
               <th style={{ width: '100px' }}>Project</th>
-              <th style={{ width: '100px' }}>Date</th>
+              <th style={{ width: '90px' }}>Date</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>Loading...</td></tr>
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>Loading...</td></tr>
             ) : documents.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>No documents found</td></tr>
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>No documents found</td></tr>
             ) : (
               documents.map(doc => (
-                <tr
-                  key={doc.id}
-                  onContextMenu={e => handleContextMenu(e, doc)}
-                  onDoubleClick={() => setShowProperties(doc)}
-                >
+                <tr key={doc.id} onContextMenu={e => handleContextMenu(e, doc)} onDoubleClick={() => setShowProperties(doc)}>
                   <td style={{ fontFamily: 'monospace', fontSize: '12px', fontWeight: 500 }}>{doc.document_number}</td>
                   <td>
                     <div style={{ fontWeight: 500 }}>{doc.title}</div>
@@ -301,47 +292,27 @@ export default function DocumentList({ filterCategory, filterProject }: Document
                     )}
                   </td>
                   <td>
-                    <span style={{
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      background: 'var(--bg-tertiary)',
-                    }}>
-                      {doc.current_revision || 'Original'}
+                    <span style={{ fontFamily: 'monospace', fontSize: '12px', padding: '2px 8px', borderRadius: '4px', background: 'var(--bg-tertiary)' }}>
+                      {doc.current_revision || 'Org'}
                     </span>
                   </td>
                   <td>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
                       {doc.document_part_numbers?.slice(0, 3).map((p: any) => (
-                        <span key={p.id} style={{
-                          fontSize: '11px',
-                          fontFamily: 'monospace',
-                          padding: '1px 6px',
-                          borderRadius: '3px',
-                          background: 'rgba(79,143,247,0.1)',
-                          color: 'var(--accent)',
-                        }}>
+                        <span key={p.id} style={{ fontSize: '11px', fontFamily: 'monospace', padding: '1px 6px', borderRadius: '3px', background: 'rgba(79,143,247,0.1)', color: 'var(--accent)' }}>
                           {p.part_number}
                         </span>
                       ))}
                       {(doc.document_part_numbers?.length || 0) > 3 && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                          +{doc.document_part_numbers!.length - 3}
-                        </span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>+{doc.document_part_numbers!.length - 3}</span>
                       )}
                     </div>
                   </td>
-                  <td style={{ fontSize: '12px' }}>
-                    {(doc.document_categories as any)?.name || '-'}
-                  </td>
-                  <td>
-                    <span className={`status-badge status-${doc.status}`}>{doc.status}</span>
-                  </td>
+                  <td style={{ fontSize: '12px' }}>{(doc.document_categories as any)?.name || '-'}</td>
+                  <td style={{ fontSize: '12px' }}>{(doc as any).manufacturer || '-'}</td>
+                  <td><span className={`status-badge status-${doc.status}`}>{doc.status}</span></td>
                   <td style={{ fontSize: '12px' }}>{doc.project || '-'}</td>
-                  <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                    {format(new Date(doc.created_at), 'dd MMM yyyy')}
-                  </td>
+                  <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{format(new Date(doc.created_at), 'dd MMM yyyy')}</td>
                 </tr>
               ))
             )}
@@ -362,7 +333,35 @@ export default function DocumentList({ filterCategory, filterProject }: Document
           onDownload={() => { handleDownload(ctxMenu.doc); setCtxMenu(null) }}
           onVerify={() => { handleVerify(ctxMenu.doc); setCtxMenu(null) }}
           onRelease={() => { handleRelease(ctxMenu.doc); setCtxMenu(null) }}
+          onDelete={() => { setConfirmDelete(ctxMenu.doc); setCtxMenu(null) }}
         />
+      )}
+
+      {/* Delete Confirmation */}
+      {confirmDelete && (
+        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '12px', color: 'var(--danger)' }}>Delete Document</h3>
+            <p style={{ fontSize: '13px', marginBottom: '8px' }}>
+              Are you sure you want to permanently delete this document?
+            </p>
+            <div style={{ padding: '10px', background: 'var(--bg-tertiary)', borderRadius: '6px', marginBottom: '20px', fontSize: '13px' }}>
+              <div><strong>{confirmDelete.document_number}</strong> — {confirmDelete.title}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                Rev: {confirmDelete.current_revision || 'Original'} · Status: {confirmDelete.status}
+              </div>
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--danger)', marginBottom: '16px' }}>
+              This action cannot be undone. All revisions and files will be permanently removed.
+            </p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button className="btn btn-danger" onClick={() => { handleDelete(confirmDelete); setConfirmDelete(null) }}>
+                Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modals */}

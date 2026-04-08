@@ -37,6 +37,7 @@ export interface Document {
   category_id: string
   drawing_group_id: string | null
   project: string | null
+  manufacturer: string | null
   current_revision: string | null
   status: DocumentStatus
   file_path: string

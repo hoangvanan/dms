@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef } from 'react'
 import { useAuth } from './AuthProvider'
-import { FileSearch, Upload, History, Download, CheckCircle, Unlock } from 'lucide-react'
+import { FileSearch, Upload, History, Download, CheckCircle, Unlock, Trash2 } from 'lucide-react'
 import type { Document } from '@/types'
 
 interface ContextMenuProps {
@@ -15,12 +15,13 @@ interface ContextMenuProps {
   onDownload: () => void
   onVerify: () => void
   onRelease: () => void
+  onDelete: () => void
 }
 
 export default function ContextMenu({
   x, y, document: doc, onClose,
   onProperties, onUploadRevision, onViewHistory, onDownload,
-  onVerify, onRelease,
+  onVerify, onRelease, onDelete,
 }: ContextMenuProps) {
   const { profile } = useAuth()
   const ref = useRef<HTMLDivElement>(null)
@@ -91,6 +92,11 @@ export default function ContextMenu({
               <Upload size={14} color="var(--warning)" /> Upload Revision
             </div>
           )}
+
+          <div className="context-menu-divider" />
+          <div className="context-menu-item danger" onClick={onDelete}>
+            <Trash2 size={14} /> Delete
+          </div>
         </>
       )}
     </div>

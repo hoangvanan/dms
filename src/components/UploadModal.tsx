@@ -25,11 +25,13 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
   const [categoryId, setCategoryId] = useState('')
   const [drawingGroupId, setDrawingGroupId] = useState('')
   const [project, setProject] = useState('')
+  const [manufacturer, setManufacturer] = useState('')
   const [partNumbers, setPartNumbers] = useState<string[]>([''])
   const [file, setFile] = useState<File | null>(null)
 
   const selectedCategory = categories.find(c => c.id === categoryId)
   const isDrawingSpec = selectedCategory?.name === 'Drawing/Specification'
+  const isDatasheet = selectedCategory?.name === 'Datasheet'
 
   useEffect(() => {
     const load = async () => {
@@ -61,19 +63,21 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
       return
     }
 
+    if (isDatasheet && !manufacturer.trim()) {
+      showToast('Manufacturer is required for Datasheet', 'error')
+      return
+    }
+
     setLoading(true)
     try {
-      // 1. Upload file to storage
       const ext = file.name.split('.').pop() || 'bin'
       const storagePath = `${Date.now()}_${file.name}`
 
       const { error: uploadError } = await supabase.storage
         .from('documents')
         .upload(storagePath, file)
-
       if (uploadError) throw uploadError
 
-      // 2. Create document record
       const { data: doc, error: docError } = await supabase
         .from('documents')
         .insert({
@@ -82,7 +86,8 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
           category_id: categoryId,
           drawing_group_id: isDrawingSpec && drawingGroupId ? drawingGroupId : null,
           project: project || null,
-          current_revision: null,  // original = no revision
+          manufacturer: isDatasheet ? manufacturer.trim() : null,
+          current_revision: null,
           status: 'processing',
           file_path: storagePath,
           file_name: file.name,
@@ -95,10 +100,9 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
 
       if (docError) throw docError
 
-      // 3. Create initial revision record (original)
       await supabase.from('document_revisions').insert({
         document_id: doc.id,
-        revision: null,  // original
+        revision: null,
         file_path: storagePath,
         file_name: file.name,
         file_size: file.size,
@@ -108,19 +112,17 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
         uploaded_by: profile.id,
       })
 
-      // 4. Link part numbers
       const partInserts = cleanParts.map(pn => ({
         document_id: doc.id,
         part_number: pn.toUpperCase(),
       }))
       await supabase.from('document_part_numbers').insert(partInserts)
 
-      // 5. Audit log
       await supabase.from('audit_log').insert({
         user_id: profile.id,
         action: 'upload',
         document_id: doc.id,
-        details: { title, part_numbers: cleanParts, category: selectedCategory?.name },
+        details: { title, part_numbers: cleanParts, category: selectedCategory?.name, manufacturer: manufacturer.trim() || null },
       })
 
       showToast('Document uploaded successfully', 'success')
@@ -144,25 +146,21 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
         </div>
 
         <form onSubmit={handleSubmit}>
-          {/* File */}
           <div style={{ marginBottom: '16px' }}>
             <label>File *</label>
             <input ref={fileRef} type="file" onChange={e => setFile(e.target.files?.[0] || null)} required style={{ padding: '6px' }} />
           </div>
 
-          {/* Title */}
           <div style={{ marginBottom: '16px' }}>
             <label>Title *</label>
             <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Document title" required />
           </div>
 
-          {/* Description */}
           <div style={{ marginBottom: '16px' }}>
             <label>Description</label>
             <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional description" rows={2} />
           </div>
 
-          {/* Category */}
           <div style={{ marginBottom: '16px' }}>
             <label>Document Category *</label>
             <select value={categoryId} onChange={e => setCategoryId(e.target.value)} required>
@@ -173,7 +171,13 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
             </select>
           </div>
 
-          {/* Drawing Group - only if Drawing/Specification */}
+          {isDatasheet && (
+            <div style={{ marginBottom: '16px' }}>
+              <label>Manufacturer (MFR) *</label>
+              <input type="text" value={manufacturer} onChange={e => setManufacturer(e.target.value)} placeholder="e.g. Walsin, Yageo, TDK" required />
+            </div>
+          )}
+
           {isDrawingSpec && (
             <div style={{ marginBottom: '16px' }}>
               <label>Drawing Group</label>
@@ -186,13 +190,11 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
             </div>
           )}
 
-          {/* Project */}
           <div style={{ marginBottom: '16px' }}>
             <label>Project</label>
             <input type="text" value={project} onChange={e => setProject(e.target.value)} placeholder="e.g. K5HA, Bajaj 750W" />
           </div>
 
-          {/* Part Numbers */}
           <div style={{ marginBottom: '20px' }}>
             <label>Part Numbers *</label>
             {partNumbers.map((pn, idx) => (
@@ -220,7 +222,6 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
             </button>
           </div>
 
-          {/* Submit */}
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <button type="button" onClick={onClose} className="btn btn-secondary">Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={loading || !file}>

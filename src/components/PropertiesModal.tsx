@@ -26,10 +26,12 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
   const [categoryId, setCategoryId] = useState(doc.category_id)
   const [drawingGroupId, setDrawingGroupId] = useState(doc.drawing_group_id || '')
   const [project, setProject] = useState(doc.project || '')
+  const [manufacturer, setManufacturer] = useState((doc as any).manufacturer || '')
   const [partNumbers, setPartNumbers] = useState<string[]>([])
 
   const selectedCategory = categories.find(c => c.id === categoryId)
   const isDrawingSpec = selectedCategory?.name === 'Drawing/Specification'
+  const isDatasheet = selectedCategory?.name === 'Datasheet'
 
   useEffect(() => {
     const load = async () => {
@@ -71,6 +73,7 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
           category_id: categoryId,
           drawing_group_id: isDrawingSpec && drawingGroupId ? drawingGroupId : null,
           project: project || null,
+          manufacturer: isDatasheet ? manufacturer.trim() || null : null,
         })
         .eq('id', doc.id)
 
@@ -152,6 +155,13 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
+
+        {isDatasheet && (
+          <div style={{ marginBottom: '16px' }}>
+            <label>Manufacturer (MFR) {canEdit ? '*' : ''}</label>
+            <input type="text" value={manufacturer} onChange={e => setManufacturer(e.target.value)} disabled={!canEdit} placeholder="e.g. Walsin, Yageo, TDK" />
+          </div>
+        )}
 
         {isDrawingSpec && (
           <div style={{ marginBottom: '16px' }}>
