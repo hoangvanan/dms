@@ -159,7 +159,8 @@ export default function DocumentList({ filterCategory, filterProject }: Document
   }
 
   const handleRelease = async (doc: Document) => {
-    if (doc.verified_by === profile!.id) {
+    const isAdmin = profile!.role === 'admin'
+    if (!isAdmin && doc.verified_by === profile!.id) {
       showToast('4-eyes rule: You cannot release a document you verified', 'error')
       return
     }

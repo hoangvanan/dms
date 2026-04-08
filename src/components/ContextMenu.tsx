@@ -45,8 +45,11 @@ export default function ContextMenu({
   const adjustedX = Math.min(x, window.innerWidth - 200)
   const adjustedY = Math.min(y, window.innerHeight - 300)
 
+  const isAdmin = profile?.role === 'admin'
   const canVerify = canEdit && doc.status === 'processing'
-  const canRelease = canEdit && doc.status === 'verification' && doc.verified_by !== profile?.id
+  // Admin can always release; editors can only release if different person verified
+  const canRelease = canEdit && doc.status === 'verification' && (isAdmin || doc.verified_by !== profile?.id)
+  const isEditorBlocked = !isAdmin && doc.status === 'verification' && doc.verified_by === profile?.id
   const canUploadRev = canEdit && doc.status === 'released'
 
   return (
@@ -77,9 +80,9 @@ export default function ContextMenu({
             </div>
           )}
 
-          {doc.status === 'verification' && doc.verified_by === profile?.id && (
+          {isEditorBlocked && (
             <div className="context-menu-item" style={{ color: 'var(--text-secondary)', cursor: 'default', opacity: 0.5 }}>
-              <Unlock size={14} /> Release (4-eyes: needs different user)
+              <Unlock size={14} /> Release (4-eyes: needs different editor)
             </div>
           )}
 
