@@ -8,7 +8,7 @@ import PropertiesModal from './PropertiesModal'
 import RevisionModal from './RevisionModal'
 import HistoryModal from './HistoryModal'
 import UploadModal from './UploadModal'
-import { Search, Upload, Filter, X } from 'lucide-react'
+import { Search, Upload, Filter, X, Download, FileText, Eye, ExternalLink, XCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import type { Document, DocumentCategory } from '@/types'
 
@@ -16,6 +16,8 @@ interface DocumentListProps {
   filterCategory?: string
   filterProject?: string
 }
+
+const PREVIEWABLE_TYPES = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'txt', 'csv', 'html']
 
 export default function DocumentList({ filterCategory, filterProject }: DocumentListProps) {
   const supabase = createClient()
@@ -34,7 +36,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
   const [categoryFilter, setCategoryFilter] = useState<string>(filterCategory || '')
   const [projectFilter, setProjectFilter] = useState<string>(filterProject || '')
 
-  // Sync with parent props when they change
+  // Sync with parent props
   useEffect(() => { setCategoryFilter(filterCategory || '') }, [filterCategory])
   useEffect(() => { setProjectFilter(filterProject || '') }, [filterProject])
 
@@ -44,6 +46,11 @@ export default function DocumentList({ filterCategory, filterProject }: Document
   const [showRevision, setShowRevision] = useState<Document | null>(null)
   const [showHistory, setShowHistory] = useState<Document | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Document | null>(null)
+
+  // Preview panel
+  const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   // Context menu
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; doc: Document } | null>(null)
@@ -112,8 +119,12 @@ export default function DocumentList({ filterCategory, filterProject }: Document
     setCtxMenu({ x: e.clientX, y: e.clientY, doc })
   }
 
-  const handleDownload = async (doc: Document) => {
-    const { data } = await supabase.storage.from('documents').createSignedUrl(doc.file_path, 300)
+  // Force download (browser saves file)
+  const handleDownload = async (doc: Document, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
+    const { data } = await supabase.storage.from('documents').createSignedUrl(doc.file_path, 300, {
+      download: doc.file_name,
+    })
     if (data?.signedUrl) {
       const a = window.document.createElement('a')
       a.href = data.signedUrl
@@ -128,14 +139,45 @@ export default function DocumentList({ filterCategory, filterProject }: Document
     })
   }
 
+  // Preview panel: single click on row
+  const handlePreview = async (doc: Document) => {
+    setPreviewDoc(doc)
+    setPreviewUrl(null)
+    setPreviewLoading(true)
+
+    const isPreviewable = PREVIEWABLE_TYPES.includes(doc.file_type.toLowerCase())
+    if (isPreviewable) {
+      const { data } = await supabase.storage.from('documents').createSignedUrl(doc.file_path, 600)
+      if (data?.signedUrl) {
+        setPreviewUrl(data.signedUrl)
+      }
+    }
+
+    // Log view
+    await supabase.from('audit_log').insert({
+      user_id: profile!.id,
+      action: 'view',
+      document_id: doc.id,
+      details: { file_name: doc.file_name },
+    })
+
+    setPreviewLoading(false)
+  }
+
+  const handleOpenInNewTab = async () => {
+    if (!previewDoc) return
+    const { data } = await supabase.storage.from('documents').createSignedUrl(previewDoc.file_path, 600)
+    if (data?.signedUrl) {
+      window.open(data.signedUrl, '_blank')
+    }
+  }
+
   const handleVerify = async (doc: Document) => {
     const { error } = await supabase
       .from('documents')
       .update({ status: 'verification', verified_by: profile!.id, verified_at: new Date().toISOString() })
       .eq('id', doc.id)
-
     if (error) { showToast(error.message, 'error'); return }
-
     await supabase.from('audit_log').insert({
       user_id: profile!.id, action: 'verify', document_id: doc.id,
       details: { document_number: doc.document_number },
@@ -150,14 +192,11 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       showToast('4-eyes rule: You cannot release a document you verified', 'error')
       return
     }
-
     const { error } = await supabase
       .from('documents')
       .update({ status: 'released', released_by: profile!.id, released_at: new Date().toISOString() })
       .eq('id', doc.id)
-
     if (error) { showToast(error.message, 'error'); return }
-
     await supabase.from('audit_log').insert({
       user_id: profile!.id, action: 'release', document_id: doc.id,
       details: { document_number: doc.document_number },
@@ -168,35 +207,20 @@ export default function DocumentList({ filterCategory, filterProject }: Document
 
   const handleDelete = async (doc: Document) => {
     try {
-      // 1. Delete file from storage
       await supabase.storage.from('documents').remove([doc.file_path])
-
-      // 2. Delete revision files from storage
       const { data: revisions } = await supabase
-        .from('document_revisions')
-        .select('file_path')
-        .eq('document_id', doc.id)
+        .from('document_revisions').select('file_path').eq('document_id', doc.id)
       if (revisions && revisions.length > 0) {
         await supabase.storage.from('documents').remove(revisions.map(r => r.file_path))
       }
-
-      // 3. Audit log BEFORE deleting (so document_id reference still valid for logging)
       await supabase.from('audit_log').insert({
-        user_id: profile!.id,
-        action: 'archive',
-        document_id: doc.id,
-        details: {
-          action: 'deleted',
-          document_number: doc.document_number,
-          title: doc.title,
-          part_numbers: doc.document_part_numbers?.map((p: any) => p.part_number),
-        },
+        user_id: profile!.id, action: 'archive', document_id: doc.id,
+        details: { action: 'deleted', document_number: doc.document_number, title: doc.title,
+          part_numbers: doc.document_part_numbers?.map((p: any) => p.part_number) },
       })
-
-      // 4. Delete related records then document (cascade handles revisions & part_numbers)
       const { error } = await supabase.from('documents').delete().eq('id', doc.id)
       if (error) throw error
-
+      if (previewDoc?.id === doc.id) { setPreviewDoc(null); setPreviewUrl(null) }
       showToast(`${doc.document_number} deleted`, 'success')
       fetchDocuments()
     } catch (err: any) {
@@ -204,18 +228,16 @@ export default function DocumentList({ filterCategory, filterProject }: Document
     }
   }
 
+  const isPreviewable = previewDoc ? PREVIEWABLE_TYPES.includes(previewDoc.file_type.toLowerCase()) : false
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh' }}>
       {/* Header */}
       <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
-        {/* Search Bar */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <select
-              value={searchType}
-              onChange={e => setSearchType(e.target.value as any)}
-              style={{ borderRadius: '6px 0 0 6px', borderRight: 'none', width: '140px', fontSize: '12px' }}
-            >
+            <select value={searchType} onChange={e => setSearchType(e.target.value as any)}
+              style={{ borderRadius: '6px 0 0 6px', borderRight: 'none', width: '140px', fontSize: '12px' }}>
               <option value="part_number">Part Number</option>
               <option value="title">Title</option>
               <option value="project">Project</option>
@@ -223,13 +245,9 @@ export default function DocumentList({ filterCategory, filterProject }: Document
           </div>
           <div style={{ flex: 1, position: 'relative' }}>
             <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-            <input
-              type="text"
-              placeholder={`Search by ${searchType.replace('_', ' ')}...`}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ paddingLeft: '34px', borderRadius: '0 6px 6px 0' }}
-            />
+            <input type="text" placeholder={`Search by ${searchType.replace('_', ' ')}...`}
+              value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              style={{ paddingLeft: '34px', borderRadius: '0 6px 6px 0' }} />
           </div>
           {canEdit && (
             <button className="btn btn-primary" onClick={() => setShowUpload(true)}>
@@ -237,8 +255,6 @@ export default function DocumentList({ filterCategory, filterProject }: Document
             </button>
           )}
         </div>
-
-        {/* Filters */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <Filter size={14} color="var(--text-secondary)" />
           <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} style={{ width: '180px', fontSize: '12px', padding: '5px 8px' }}>
@@ -252,7 +268,8 @@ export default function DocumentList({ filterCategory, filterProject }: Document
             <option value="released">Released</option>
           </select>
           {(categoryFilter || statusFilter || searchQuery) && (
-            <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => { setCategoryFilter(''); setStatusFilter(''); setSearchQuery('') }}>
+            <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '11px' }}
+              onClick={() => { setCategoryFilter(''); setStatusFilter(''); setSearchQuery('') }}>
               <X size={12} /> Clear
             </button>
           )}
@@ -262,74 +279,213 @@ export default function DocumentList({ filterCategory, filterProject }: Document
         </div>
       </div>
 
-      {/* Table */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th style={{ width: '130px' }}>Doc Number</th>
-              <th>Title</th>
-              <th style={{ width: '70px' }}>Rev</th>
-              <th style={{ width: '160px' }}>Part Numbers</th>
-              <th style={{ width: '140px' }}>Category</th>
-              <th style={{ width: '100px' }}>MFR</th>
-              <th style={{ width: '100px' }}>Status</th>
-              <th style={{ width: '100px' }}>Project</th>
-              <th style={{ width: '90px' }}>Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>Loading...</td></tr>
-            ) : documents.length === 0 ? (
-              <tr><td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>No documents found</td></tr>
-            ) : (
-              documents.map(doc => (
-                <tr key={doc.id} onContextMenu={e => handleContextMenu(e, doc)} onDoubleClick={() => setShowProperties(doc)}>
-                  <td style={{ fontFamily: 'monospace', fontSize: '12px', fontWeight: 500 }}>{doc.document_number}</td>
-                  <td>
-                    <div style={{ fontWeight: 500 }}>{doc.title}</div>
-                    {doc.description && (
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {doc.description}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <span style={{ fontFamily: 'monospace', fontSize: '12px', padding: '2px 8px', borderRadius: '4px', background: 'var(--bg-tertiary)' }}>
-                      {doc.current_revision || 'Org'}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
-                      {doc.document_part_numbers?.slice(0, 3).map((p: any) => (
-                        <span key={p.id} style={{ fontSize: '11px', fontFamily: 'monospace', padding: '1px 6px', borderRadius: '3px', background: 'rgba(79,143,247,0.1)', color: 'var(--accent)' }}>
-                          {p.part_number}
-                        </span>
-                      ))}
-                      {(doc.document_part_numbers?.length || 0) > 3 && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>+{doc.document_part_numbers!.length - 3}</span>
+      {/* Main content area: table + preview panel */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Table */}
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{ width: '40px' }}></th>
+                <th style={{ width: '120px' }}>Doc Number</th>
+                <th>Title</th>
+                <th style={{ width: '60px' }}>Rev</th>
+                <th style={{ width: '150px' }}>Part Numbers</th>
+                <th style={{ width: '130px' }}>Category</th>
+                <th style={{ width: '90px' }}>MFR</th>
+                <th style={{ width: '95px' }}>Status</th>
+                <th style={{ width: '90px' }}>Project</th>
+                <th style={{ width: '85px' }}>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={10} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>Loading...</td></tr>
+              ) : documents.length === 0 ? (
+                <tr><td colSpan={10} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>No documents found</td></tr>
+              ) : (
+                documents.map(doc => (
+                  <tr key={doc.id}
+                    onClick={() => handlePreview(doc)}
+                    onContextMenu={e => handleContextMenu(e, doc)}
+                    onDoubleClick={() => setShowProperties(doc)}
+                    style={{ background: previewDoc?.id === doc.id ? 'rgba(79,143,247,0.08)' : undefined }}
+                  >
+                    {/* Download icon */}
+                    <td style={{ textAlign: 'center', padding: '6px' }}>
+                      <button
+                        onClick={(e) => handleDownload(doc, e)}
+                        title="Download"
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: 'var(--text-secondary)', padding: '4px',
+                          borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'color 0.15s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
+                      >
+                        <Download size={15} />
+                      </button>
+                    </td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '12px', fontWeight: 500 }}>{doc.document_number}</td>
+                    <td>
+                      <div style={{ fontWeight: 500 }}>{doc.title}</div>
+                      {doc.description && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {doc.description}
+                        </div>
                       )}
+                    </td>
+                    <td>
+                      <span style={{ fontFamily: 'monospace', fontSize: '12px', padding: '2px 8px', borderRadius: '4px', background: 'var(--bg-tertiary)' }}>
+                        {doc.current_revision || 'Org'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+                        {doc.document_part_numbers?.slice(0, 3).map((p: any) => (
+                          <span key={p.id} style={{ fontSize: '11px', fontFamily: 'monospace', padding: '1px 6px', borderRadius: '3px', background: 'rgba(79,143,247,0.1)', color: 'var(--accent)' }}>
+                            {p.part_number}
+                          </span>
+                        ))}
+                        {(doc.document_part_numbers?.length || 0) > 3 && (
+                          <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>+{doc.document_part_numbers!.length - 3}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ fontSize: '12px' }}>{(doc.document_categories as any)?.name || '-'}</td>
+                    <td style={{ fontSize: '12px' }}>{(doc as any).manufacturer || '-'}</td>
+                    <td><span className={`status-badge status-${doc.status}`}>{doc.status}</span></td>
+                    <td style={{ fontSize: '12px' }}>{doc.project || '-'}</td>
+                    <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{format(new Date(doc.created_at), 'dd MMM yyyy')}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Preview Panel */}
+        {previewDoc && (
+          <div style={{
+            width: '400px',
+            minWidth: '400px',
+            borderLeft: '1px solid var(--border)',
+            background: 'var(--bg-secondary)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}>
+            {/* Preview Header */}
+            <div style={{
+              padding: '12px 16px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div style={{ flex: 1, overflow: 'hidden' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {previewDoc.title}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {previewDoc.document_number} · Rev {previewDoc.current_revision || 'Original'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '4px', marginLeft: '8px' }}>
+                <button onClick={handleOpenInNewTab} title="Open in new tab"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', borderRadius: '4px' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-secondary)')}>
+                  <ExternalLink size={16} />
+                </button>
+                <button onClick={(e) => handleDownload(previewDoc, e)} title="Download"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', borderRadius: '4px' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-secondary)')}>
+                  <Download size={16} />
+                </button>
+                <button onClick={() => { setPreviewDoc(null); setPreviewUrl(null) }} title="Close preview"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', borderRadius: '4px' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--danger)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-secondary)')}>
+                  <XCircle size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Preview Content */}
+            <div style={{ flex: 1, overflow: 'auto' }}>
+              {previewLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
+                  Loading preview...
+                </div>
+              ) : isPreviewable && previewUrl ? (
+                previewDoc.file_type.toLowerCase() === 'pdf' ? (
+                  <iframe src={previewUrl} style={{ width: '100%', height: '100%', border: 'none' }} title="Document Preview" />
+                ) : ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(previewDoc.file_type.toLowerCase()) ? (
+                  <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                    <img src={previewUrl} alt={previewDoc.file_name}
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px' }} />
+                  </div>
+                ) : (
+                  <iframe src={previewUrl} style={{ width: '100%', height: '100%', border: 'none', background: 'white' }} title="Document Preview" />
+                )
+              ) : (
+                /* Non-previewable file: show metadata */
+                <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                  <div style={{
+                    width: '64px', height: '64px', borderRadius: '16px',
+                    background: 'var(--bg-tertiary)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <FileText size={32} color="var(--text-secondary)" />
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '4px' }}>{previewDoc.file_name}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      .{previewDoc.file_type.toUpperCase()} · {(previewDoc.file_size / 1024 / 1024).toFixed(2)} MB
                     </div>
-                  </td>
-                  <td style={{ fontSize: '12px' }}>{(doc.document_categories as any)?.name || '-'}</td>
-                  <td style={{ fontSize: '12px' }}>{(doc as any).manufacturer || '-'}</td>
-                  <td><span className={`status-badge status-${doc.status}`}>{doc.status}</span></td>
-                  <td style={{ fontSize: '12px' }}>{doc.project || '-'}</td>
-                  <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{format(new Date(doc.created_at), 'dd MMM yyyy')}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      Preview not available for this file type
+                    </div>
+                  </div>
+                  <button className="btn btn-primary" onClick={(e) => handleDownload(previewDoc, e)}>
+                    <Download size={14} /> Download to View
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Preview Footer: metadata */}
+            <div style={{
+              padding: '12px 16px',
+              borderTop: '1px solid var(--border)',
+              fontSize: '11px',
+              color: 'var(--text-secondary)',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '6px',
+            }}>
+              <div>Category: <span style={{ color: 'var(--text-primary)' }}>{(previewDoc.document_categories as any)?.name}</span></div>
+              <div>Status: <span className={`status-badge status-${previewDoc.status}`} style={{ fontSize: '10px' }}>{previewDoc.status}</span></div>
+              <div>Project: <span style={{ color: 'var(--text-primary)' }}>{previewDoc.project || '-'}</span></div>
+              <div>MFR: <span style={{ color: 'var(--text-primary)' }}>{previewDoc.manufacturer || '-'}</span></div>
+              <div>Uploaded: <span style={{ color: 'var(--text-primary)' }}>{format(new Date(previewDoc.created_at), 'dd MMM yyyy')}</span></div>
+              <div>By: <span style={{ color: 'var(--text-primary)' }}>{(previewDoc.profiles as any)?.full_name || '-'}</span></div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                Parts: {previewDoc.document_part_numbers?.map((p: any) => p.part_number).join(', ') || '-'}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Context Menu */}
       {ctxMenu && (
         <ContextMenu
-          x={ctxMenu.x}
-          y={ctxMenu.y}
-          document={ctxMenu.doc}
+          x={ctxMenu.x} y={ctxMenu.y} document={ctxMenu.doc}
           onClose={() => setCtxMenu(null)}
           onProperties={() => { setShowProperties(ctxMenu.doc); setCtxMenu(null) }}
           onUploadRevision={() => { setShowRevision(ctxMenu.doc); setCtxMenu(null) }}
@@ -346,9 +502,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
         <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '12px', color: 'var(--danger)' }}>Delete Document</h3>
-            <p style={{ fontSize: '13px', marginBottom: '8px' }}>
-              Are you sure you want to permanently delete this document?
-            </p>
+            <p style={{ fontSize: '13px', marginBottom: '8px' }}>Are you sure you want to permanently delete this document?</p>
             <div style={{ padding: '10px', background: 'var(--bg-tertiary)', borderRadius: '6px', marginBottom: '20px', fontSize: '13px' }}>
               <div><strong>{confirmDelete.document_number}</strong> — {confirmDelete.title}</div>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
@@ -360,9 +514,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
             </p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={() => { handleDelete(confirmDelete); setConfirmDelete(null) }}>
-                Delete Permanently
-              </button>
+              <button className="btn btn-danger" onClick={() => { handleDelete(confirmDelete); setConfirmDelete(null) }}>Delete Permanently</button>
             </div>
           </div>
         </div>
