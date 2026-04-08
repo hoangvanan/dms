@@ -15,6 +15,8 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
 
   const navItems = [
     { id: 'documents', label: 'All Documents', icon: FileText },
+    { id: 'by-category', label: 'By Category', icon: FolderOpen },
+    { id: 'by-project', label: 'By Project', icon: LayoutGrid },
   ]
 
   const adminItems = [

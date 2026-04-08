@@ -34,6 +34,10 @@ export default function DocumentList({ filterCategory, filterProject }: Document
   const [categoryFilter, setCategoryFilter] = useState<string>(filterCategory || '')
   const [projectFilter, setProjectFilter] = useState<string>(filterProject || '')
 
+  // Sync with parent props when they change
+  useEffect(() => { setCategoryFilter(filterCategory || '') }, [filterCategory])
+  useEffect(() => { setProjectFilter(filterProject || '') }, [filterProject])
+
   // Modals
   const [showUpload, setShowUpload] = useState(false)
   const [showProperties, setShowProperties] = useState<Document | null>(null)
