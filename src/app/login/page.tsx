@@ -50,7 +50,7 @@ export default function LoginPage() {
 
         const { error } = await supabase.auth.resetPasswordForEmail(email)
         if (error) throw error
-        setSuccess('A 6-digit code has been sent to your email. Check inbox and spam folder.')
+        setSuccess('A verification code has been sent to your email. Check inbox and spam folder.')
         setMode('otp')
         setLoading(false)
         return
@@ -59,7 +59,7 @@ export default function LoginPage() {
       // === OTP: Verify code ===
       if (mode === 'otp') {
         if (!otpCode.trim()) {
-          setError('Please enter the 6-digit code')
+          setError('Please enter the verification code')
           setLoading(false)
           return
         }
@@ -228,15 +228,15 @@ export default function LoginPage() {
             <div style={{ marginBottom: '16px' }}>
               <label>Verification Code</label>
               <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                Enter the 6-digit code sent to <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>
+                Enter the code sent to <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>
               </div>
               <input
                 type="text"
-                placeholder="000000"
+                placeholder="00000000"
                 value={otpCode}
-                onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
                 required
-                maxLength={6}
+                maxLength={8}
                 style={{ textAlign: 'center', fontSize: '24px', fontFamily: 'monospace', letterSpacing: '8px', padding: '12px' }}
               />
             </div>
