@@ -6,59 +6,74 @@ import type { Profile } from '@/types'
 
 const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000 // 8 hours
 const SESSION_KEY = 'dms_session_ts'
+const RECOVERY_KEY = 'dms_password_recovery'
 
 interface AuthContextType {
   profile: Profile | null
   loading: boolean
   signOut: () => Promise<void>
+  isPasswordRecovery: boolean
 }
 
 const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   signOut: async () => {},
+  isPasswordRecovery: false,
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
   const router = useRouter()
   const supabase = createClient()
   const idleTimerRef = useRef<any>(null)
 
-  // Reset idle timer on user activity
   const resetIdleTimer = () => {
-    // Update session timestamp
     sessionStorage.setItem(SESSION_KEY, Date.now().toString())
-
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
     idleTimerRef.current = setTimeout(async () => {
-      // 8 hours idle — force logout
       await supabase.auth.signOut()
       router.replace('/login')
     }, SESSION_TIMEOUT_MS)
   }
 
   useEffect(() => {
-    const getProfile = async () => {
-      // Check if session timestamp exists (browser close detection)
-      // sessionStorage is cleared when browser/tab closes
-      const sessionTs = sessionStorage.getItem(SESSION_KEY)
+    // Check URL hash for recovery token (Supabase appends #access_token=...&type=recovery)
+    const hash = window.location.hash
+    const isRecoveryFromUrl = hash.includes('type=recovery')
 
+    if (isRecoveryFromUrl) {
+      sessionStorage.setItem(RECOVERY_KEY, 'true')
+    }
+
+    const recoveryFlag = sessionStorage.getItem(RECOVERY_KEY) === 'true'
+
+    const getProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession()
+
       if (!session) {
         router.replace('/login')
         return
       }
 
-      // If no sessionStorage timestamp, this is a new browser session — force re-login
+      // If this is a password recovery flow, skip session timeout checks
+      if (recoveryFlag || isRecoveryFromUrl) {
+        setIsPasswordRecovery(true)
+        setLoading(false)
+        return
+      }
+
+      // Normal session checks
+      const sessionTs = sessionStorage.getItem(SESSION_KEY)
+
       if (!sessionTs) {
         await supabase.auth.signOut()
         router.replace('/login')
         return
       }
 
-      // Check if session has been idle for too long
       const elapsed = Date.now() - parseInt(sessionTs, 10)
       if (elapsed > SESSION_TIMEOUT_MS) {
         await supabase.auth.signOut()
@@ -88,21 +103,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          sessionStorage.setItem(RECOVERY_KEY, 'true')
+          setIsPasswordRecovery(true)
+          setLoading(false)
+          return
+        }
         if (event === 'SIGNED_IN' && session) {
-          // Mark session start in sessionStorage
           sessionStorage.setItem(SESSION_KEY, Date.now().toString())
         }
         if (event === 'SIGNED_OUT' || !session) {
           setProfile(null)
           sessionStorage.removeItem(SESSION_KEY)
+          sessionStorage.removeItem(RECOVERY_KEY)
           router.replace('/login')
         }
       }
     )
 
-    // Listen for user activity to reset idle timer
     const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart']
-    const handleActivity = () => resetIdleTimer()
+    const handleActivity = () => {
+      if (!isPasswordRecovery) resetIdleTimer()
+    }
     activityEvents.forEach(evt => window.addEventListener(evt, handleActivity))
 
     return () => {
@@ -114,12 +136,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     sessionStorage.removeItem(SESSION_KEY)
+    sessionStorage.removeItem(RECOVERY_KEY)
     await supabase.auth.signOut()
     router.replace('/login')
   }
 
   return (
-    <AuthContext.Provider value={{ profile, loading, signOut }}>
+    <AuthContext.Provider value={{ profile, loading, signOut, isPasswordRecovery }}>
       {children}
     </AuthContext.Provider>
   )
