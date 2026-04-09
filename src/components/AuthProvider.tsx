@@ -1,11 +1,9 @@
 'use client'
-import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import type { Profile } from '@/types'
 
-const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000 // 8 hours
-const SESSION_KEY = 'dms_session_ts'
 const RECOVERY_KEY = 'dms_password_recovery'
 
 interface AuthContextType {
@@ -28,19 +26,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
   const router = useRouter()
   const supabase = createClient()
-  const idleTimerRef = useRef<any>(null)
-
-  const resetIdleTimer = () => {
-    sessionStorage.setItem(SESSION_KEY, Date.now().toString())
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-    idleTimerRef.current = setTimeout(async () => {
-      await supabase.auth.signOut()
-      router.replace('/login')
-    }, SESSION_TIMEOUT_MS)
-  }
 
   useEffect(() => {
-    // Check URL hash for recovery token (Supabase appends #access_token=...&type=recovery)
     const hash = window.location.hash
     const isRecoveryFromUrl = hash.includes('type=recovery')
 
@@ -58,29 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      // If this is a password recovery flow, skip session timeout checks
+      // Password recovery flow — show reset form instead of dashboard
       if (recoveryFlag || isRecoveryFromUrl) {
         setIsPasswordRecovery(true)
         setLoading(false)
         return
       }
 
-      // Normal session checks
-      const sessionTs = sessionStorage.getItem(SESSION_KEY)
-
-      if (!sessionTs) {
-        await supabase.auth.signOut()
-        router.replace('/login')
-        return
-      }
-
-      const elapsed = Date.now() - parseInt(sessionTs, 10)
-      if (elapsed > SESSION_TIMEOUT_MS) {
-        await supabase.auth.signOut()
-        router.replace('/login')
-        return
-      }
-
+      // Normal flow — load profile and check is_active
       const { data } = await supabase
         .from('profiles')
         .select('*')
@@ -94,7 +66,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
         setProfile(data)
-        resetIdleTimer()
       }
       setLoading(false)
     }
@@ -109,33 +80,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setLoading(false)
           return
         }
-        if (event === 'SIGNED_IN' && session) {
-          sessionStorage.setItem(SESSION_KEY, Date.now().toString())
-        }
         if (event === 'SIGNED_OUT' || !session) {
           setProfile(null)
-          sessionStorage.removeItem(SESSION_KEY)
           sessionStorage.removeItem(RECOVERY_KEY)
           router.replace('/login')
         }
       }
     )
 
-    const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart']
-    const handleActivity = () => {
-      if (!isPasswordRecovery) resetIdleTimer()
-    }
-    activityEvents.forEach(evt => window.addEventListener(evt, handleActivity))
-
-    return () => {
-      subscription.unsubscribe()
-      activityEvents.forEach(evt => window.removeEventListener(evt, handleActivity))
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
   const signOut = async () => {
-    sessionStorage.removeItem(SESSION_KEY)
     sessionStorage.removeItem(RECOVERY_KEY)
     await supabase.auth.signOut()
     router.replace('/login')
