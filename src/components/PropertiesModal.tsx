@@ -25,27 +25,42 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
   const [description, setDescription] = useState(doc.description || '')
   const [categoryId, setCategoryId] = useState(doc.category_id)
   const [drawingGroupId, setDrawingGroupId] = useState(doc.drawing_group_id || '')
-  const [project, setProject] = useState(doc.project || '')
+  const [projects, setProjects] = useState<string[]>([])
   const [manufacturer, setManufacturer] = useState((doc as any).manufacturer || '')
   const [partNumbers, setPartNumbers] = useState<string[]>([])
 
   const selectedCategory = categories.find(c => c.id === categoryId)
   const isDrawingSpec = selectedCategory?.name === 'Drawing/Specification'
   const isDatasheet = selectedCategory?.name === 'Datasheet'
+  const showMultiProject = !isDatasheet && selectedCategory
 
   useEffect(() => {
     const load = async () => {
-      const [catRes, dgRes, pnRes] = await Promise.all([
+      const [catRes, dgRes, pnRes, projRes] = await Promise.all([
         supabase.from('document_categories').select('*').eq('is_active', true).order('name'),
         supabase.from('drawing_groups').select('*').eq('is_active', true).order('name'),
         supabase.from('document_part_numbers').select('*').eq('document_id', doc.id),
+        supabase.from('document_projects').select('*').eq('document_id', doc.id),
       ])
       if (catRes.data) setCategories(catRes.data)
       if (dgRes.data) setDrawingGroups(dgRes.data)
       if (pnRes.data) setPartNumbers(pnRes.data.map(p => p.part_number))
+      if (projRes.data && projRes.data.length > 0) {
+        setProjects(projRes.data.map(p => p.project))
+      } else if (doc.project) {
+        setProjects([doc.project])
+      }
     }
     load()
   }, [doc.id])
+
+  const addProject = () => setProjects([...projects, ''])
+  const removeProject = (idx: number) => setProjects(projects.filter((_, i) => i !== idx))
+  const updateProject = (idx: number, val: string) => {
+    const updated = [...projects]
+    updated[idx] = val
+    setProjects(updated)
+  }
 
   const addPartNumber = () => setPartNumbers([...partNumbers, ''])
   const removePartNumber = (idx: number) => setPartNumbers(partNumbers.filter((_, i) => i !== idx))
@@ -62,6 +77,8 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
       return
     }
 
+    const cleanProjects = projects.map(p => p.trim()).filter(Boolean)
+
     setLoading(true)
     try {
       // 1. Update document
@@ -72,26 +89,34 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
           description: description || null,
           category_id: categoryId,
           drawing_group_id: isDrawingSpec && drawingGroupId ? drawingGroupId : null,
-          project: project || null,
+          project: cleanProjects[0] || null,
           manufacturer: isDatasheet ? manufacturer.trim() || null : null,
         })
         .eq('id', doc.id)
 
       if (error) throw error
 
-      // 2. Replace part numbers (delete all, re-insert)
+      // 2. Replace part numbers
       await supabase.from('document_part_numbers').delete().eq('document_id', doc.id)
       await supabase.from('document_part_numbers').insert(
         cleanParts.map(pn => ({ document_id: doc.id, part_number: pn.toUpperCase() }))
       )
 
-      // 3. Audit log
+      // 3. Replace projects
+      await supabase.from('document_projects').delete().eq('document_id', doc.id)
+      if (cleanProjects.length > 0) {
+        await supabase.from('document_projects').insert(
+          cleanProjects.map(p => ({ document_id: doc.id, project: p }))
+        )
+      }
+
+      // 4. Audit log
       await supabase.from('audit_log').insert({
         user_id: profile!.id,
         action: 'edit_metadata',
         document_id: doc.id,
         details: {
-          changes: { title, description, project, part_numbers: cleanParts },
+          changes: { title, description, projects: cleanProjects, part_numbers: cleanParts },
         },
       })
 
@@ -173,10 +198,26 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
           </div>
         )}
 
-        <div style={{ marginBottom: '16px' }}>
-          <label>Project</label>
-          <input type="text" value={project} onChange={e => setProject(e.target.value)} disabled={!canEdit} />
-        </div>
+        {showMultiProject && (
+          <div style={{ marginBottom: '16px' }}>
+            <label>Project(s)</label>
+            {projects.map((p, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                <input type="text" value={p} onChange={e => updateProject(idx, e.target.value)} disabled={!canEdit} placeholder="e.g. K5HA" />
+                {canEdit && projects.length > 1 && (
+                  <button type="button" onClick={() => removeProject(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}>
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {canEdit && (
+              <button type="button" onClick={addProject} className="btn btn-secondary" style={{ fontSize: '12px', padding: '4px 10px' }}>
+                <Plus size={14} /> Add Project
+              </button>
+            )}
+          </div>
+        )}
 
         <div style={{ marginBottom: '20px' }}>
           <label>Part Numbers</label>

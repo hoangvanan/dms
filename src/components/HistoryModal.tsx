@@ -31,10 +31,7 @@ export default function HistoryModal({ document: doc, onClose }: HistoryModalPro
   const handleDownload = async (filePath: string, fileName: string) => {
     const { data } = await supabase.storage.from('documents').createSignedUrl(filePath, 300)
     if (data?.signedUrl) {
-      const a = document.createElement('a')
-      a.href = data.signedUrl
-      a.download = fileName
-      a.click()
+      window.open(data.signedUrl, '_blank')
     }
   }
 

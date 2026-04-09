@@ -25,6 +25,7 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
   const [categoryId, setCategoryId] = useState('')
   const [drawingGroupId, setDrawingGroupId] = useState('')
   const [project, setProject] = useState('')
+  const [projects, setProjects] = useState<string[]>([''])
   const [manufacturer, setManufacturer] = useState('')
   const [partNumbers, setPartNumbers] = useState<string[]>([''])
   const [file, setFile] = useState<File | null>(null)
@@ -32,6 +33,15 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
   const selectedCategory = categories.find(c => c.id === categoryId)
   const isDrawingSpec = selectedCategory?.name === 'Drawing/Specification'
   const isDatasheet = selectedCategory?.name === 'Datasheet'
+  const showMultiProject = !isDatasheet && selectedCategory
+
+  const addProject = () => setProjects([...projects, ''])
+  const removeProject = (idx: number) => setProjects(projects.filter((_, i) => i !== idx))
+  const updateProject = (idx: number, val: string) => {
+    const updated = [...projects]
+    updated[idx] = val
+    setProjects(updated)
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -72,6 +82,7 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
     try {
       const ext = file.name.split('.').pop() || 'bin'
       const storagePath = `${Date.now()}_${file.name}`
+      const cleanProjects = projects.map(p => p.trim()).filter(Boolean)
 
       const { error: uploadError } = await supabase.storage
         .from('documents')
@@ -85,7 +96,7 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
           description: description || null,
           category_id: categoryId,
           drawing_group_id: isDrawingSpec && drawingGroupId ? drawingGroupId : null,
-          project: project || null,
+          project: cleanProjects[0] || null,
           manufacturer: isDatasheet ? manufacturer.trim() : null,
           current_revision: null,
           status: 'processing',
@@ -118,11 +129,18 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
       }))
       await supabase.from('document_part_numbers').insert(partInserts)
 
+      // Insert projects into junction table
+      if (cleanProjects.length > 0) {
+        await supabase.from('document_projects').insert(
+          cleanProjects.map(p => ({ document_id: doc.id, project: p }))
+        )
+      }
+
       await supabase.from('audit_log').insert({
         user_id: profile.id,
         action: 'upload',
         document_id: doc.id,
-        details: { title, part_numbers: cleanParts, category: selectedCategory?.name, manufacturer: manufacturer.trim() || null },
+        details: { title, part_numbers: cleanParts, projects: cleanProjects, category: selectedCategory?.name, manufacturer: manufacturer.trim() || null },
       })
 
       showToast('Document uploaded successfully', 'success')
@@ -190,10 +208,24 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
             </div>
           )}
 
-          <div style={{ marginBottom: '16px' }}>
-            <label>Project</label>
-            <input type="text" value={project} onChange={e => setProject(e.target.value)} placeholder="e.g. K5HA, Bajaj 750W" />
-          </div>
+          {showMultiProject && (
+            <div style={{ marginBottom: '16px' }}>
+              <label>Project(s)</label>
+              {projects.map((p, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                  <input type="text" value={p} onChange={e => updateProject(idx, e.target.value)} placeholder="e.g. K5HA, Bajaj 750W" />
+                  {projects.length > 1 && (
+                    <button type="button" onClick={() => removeProject(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px' }}>
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button type="button" onClick={addProject} className="btn btn-secondary" style={{ marginTop: '4px', fontSize: '12px', padding: '4px 10px' }}>
+                <Plus size={14} /> Add Project
+              </button>
+            </div>
+          )}
 
           <div style={{ marginBottom: '20px' }}>
             <label>Part Numbers *</label>

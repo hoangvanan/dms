@@ -56,6 +56,7 @@ export interface Document {
   drawing_groups?: DrawingGroup
   profiles?: Profile
   document_part_numbers?: DocumentPartNumber[]
+  document_projects?: DocumentProject[]
   verified_by_profile?: Profile
   released_by_profile?: Profile
 }
@@ -64,6 +65,13 @@ export interface DocumentPartNumber {
   id: string
   document_id: string
   part_number: string
+  created_at: string
+}
+
+export interface DocumentProject {
+  id: string
+  document_id: string
+  project: string
   created_at: string
 }
 

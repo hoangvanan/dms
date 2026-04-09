@@ -65,14 +65,14 @@ export default function DocumentList({ filterCategory, filterProject }: Document
         document_categories(id, name),
         drawing_groups(id, name),
         profiles:uploaded_by(id, full_name),
-        document_part_numbers(id, part_number)
+        document_part_numbers(id, part_number),
+        document_projects(id, project)
       `, { count: 'exact' })
       .neq('status', 'archived')
       .order('created_at', { ascending: false })
 
     if (statusFilter) query = query.eq('status', statusFilter)
     if (categoryFilter) query = query.eq('category_id', categoryFilter)
-    if (projectFilter) query = query.ilike('project', `%${projectFilter}%`)
 
     const { data, count, error } = await query.limit(100)
 
@@ -83,6 +83,15 @@ export default function DocumentList({ filterCategory, filterProject }: Document
     }
 
     let filtered = data || []
+
+    // Client-side filter for project (from junction table)
+    if (projectFilter) {
+      const pf = projectFilter.toUpperCase()
+      filtered = filtered.filter(d =>
+        d.document_projects?.some((p: any) => p.project.toUpperCase().includes(pf)) ||
+        (d.project || '').toUpperCase().includes(pf)
+      )
+    }
 
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toUpperCase()
@@ -97,6 +106,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
         )
       } else if (searchType === 'project') {
         filtered = filtered.filter(d =>
+          d.document_projects?.some((p: any) => p.project.toUpperCase().includes(q)) ||
           (d.project || '').toUpperCase().includes(q)
         )
       }
@@ -354,10 +364,33 @@ export default function DocumentList({ filterCategory, filterProject }: Document
                         )}
                       </div>
                     </td>
-                    <td style={{ fontSize: '12px' }}>{(doc.document_categories as any)?.name || '-'}</td>
+                    <td>
+                      <div style={{ fontSize: '12px' }}>{(doc.document_categories as any)?.name || '-'}</div>
+                      {(doc.drawing_groups as any)?.name && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {(doc.drawing_groups as any).name}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ fontSize: '12px' }}>{(doc as any).manufacturer || '-'}</td>
                     <td><span className={`status-badge status-${doc.status}`}>{doc.status}</span></td>
-                    <td style={{ fontSize: '12px' }}>{doc.project || '-'}</td>
+                    <td>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+                        {(doc.document_projects && doc.document_projects.length > 0)
+                          ? doc.document_projects.slice(0, 3).map((p: any) => (
+                              <span key={p.id} style={{ fontSize: '11px', fontFamily: 'monospace', padding: '1px 6px', borderRadius: '3px', background: 'rgba(251,191,36,0.1)', color: '#fbbf24' }}>
+                                {p.project}
+                              </span>
+                            ))
+                          : doc.project
+                            ? <span style={{ fontSize: '11px', fontFamily: 'monospace', padding: '1px 6px', borderRadius: '3px', background: 'rgba(251,191,36,0.1)', color: '#fbbf24' }}>{doc.project}</span>
+                            : <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>-</span>
+                        }
+                        {(doc.document_projects?.length || 0) > 3 && (
+                          <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>+{doc.document_projects!.length - 3}</span>
+                        )}
+                      </div>
+                    </td>
                     <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{format(new Date(doc.created_at), 'dd MMM yyyy')}</td>
                   </tr>
                 ))
@@ -470,7 +503,11 @@ export default function DocumentList({ filterCategory, filterProject }: Document
             }}>
               <div>Category: <span style={{ color: 'var(--text-primary)' }}>{(previewDoc.document_categories as any)?.name}</span></div>
               <div>Status: <span className={`status-badge status-${previewDoc.status}`} style={{ fontSize: '10px' }}>{previewDoc.status}</span></div>
-              <div>Project: <span style={{ color: 'var(--text-primary)' }}>{previewDoc.project || '-'}</span></div>
+              <div>Project: <span style={{ color: 'var(--text-primary)' }}>{
+                previewDoc.document_projects && previewDoc.document_projects.length > 0
+                  ? previewDoc.document_projects.map((p: any) => p.project).join(', ')
+                  : previewDoc.project || '-'
+              }</span></div>
               <div>MFR: <span style={{ color: 'var(--text-primary)' }}>{previewDoc.manufacturer || '-'}</span></div>
               <div>Uploaded: <span style={{ color: 'var(--text-primary)' }}>{format(new Date(previewDoc.created_at), 'dd MMM yyyy')}</span></div>
               <div>By: <span style={{ color: 'var(--text-primary)' }}>{(previewDoc.profiles as any)?.full_name || '-'}</span></div>
