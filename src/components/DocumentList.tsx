@@ -426,6 +426,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
           <div style={{
             width: '600px',
             minWidth: '600px',
+            flexShrink: 0,
             borderLeft: '1px solid var(--border)',
             background: 'var(--bg-secondary)',
             display: 'flex',
