@@ -28,6 +28,7 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
   const [loading, setLoading] = useState(false)
 
   const [title, setTitle] = useState(doc.title)
+  const [description, setDescription] = useState(doc.description || '')
   const [categoryId, setCategoryId] = useState(doc.category_id)
   const [drawingGroupId, setDrawingGroupId] = useState(doc.drawing_group_id || '')
   const [projects, setProjects] = useState<string[]>([])
@@ -109,7 +110,7 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
         .from('documents')
         .update({
           title,
-          description: null,
+          description: description || null,
           category_id: categoryId,
           drawing_group_id: isDrawingSpec && drawingGroupId ? drawingGroupId : null,
           project: cleanProjects[0] || null,
@@ -141,7 +142,7 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
         user_id: profile!.id,
         action: 'edit_metadata',
         document_id: doc.id,
-        details: { changes: { title, projects: cleanProjects, parts: cleanParts } },
+        details: { changes: { title, description, projects: cleanProjects, parts: cleanParts } },
       })
 
       showToast('Properties updated', 'success')
@@ -190,6 +191,11 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
         <div style={{ marginBottom: '16px' }}>
           <label>Title</label>
           <input type="text" value={title} onChange={e => setTitle(e.target.value)} disabled={!canEdit} />
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <label>Description</label>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} disabled={!canEdit} placeholder="Optional document description" />
         </div>
 
         <div style={{ marginBottom: '16px' }}>

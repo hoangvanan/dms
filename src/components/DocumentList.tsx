@@ -102,7 +102,8 @@ export default function DocumentList({ filterCategory, filterProject }: Document
         )
       } else if (searchType === 'title') {
         filtered = filtered.filter(d =>
-          d.title.toUpperCase().includes(q)
+          d.title.toUpperCase().includes(q) ||
+          (d.description || '').toUpperCase().includes(q)
         )
       } else if (searchType === 'part_description') {
         filtered = filtered.filter(d =>
@@ -301,7 +302,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       {/* Main content area: table + preview panel */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Table */}
-        <div style={{ flex: 1, overflow: 'auto' }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
           <table className="data-table" style={{ minWidth: '1000px' }}>
             <thead>
               <tr>
@@ -350,6 +351,11 @@ export default function DocumentList({ filterCategory, filterProject }: Document
                     <td style={{ fontFamily: 'monospace', fontSize: '12px', fontWeight: 500 }}>{doc.document_number}</td>
                     <td>
                       <div style={{ fontWeight: 500 }}>{doc.title}</div>
+                      {doc.description && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {doc.description}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <span style={{ fontFamily: 'monospace', fontSize: '12px', padding: '2px 8px', borderRadius: '4px', background: 'var(--bg-tertiary)' }}>
@@ -442,7 +448,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
                   {previewDoc.document_number} · Rev {previewDoc.current_revision || 'Original'}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '4px', marginLeft: '8px' }}>
+              <div style={{ display: 'flex', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
                 <button onClick={handleOpenInNewTab} title="Open in new tab"
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', borderRadius: '4px' }}
                   onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
