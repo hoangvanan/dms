@@ -30,7 +30,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
   const [total, setTotal] = useState(0)
 
   // Search & filters
-  const [searchType, setSearchType] = useState<'part_number' | 'project' | 'category' | 'title'>('part_number')
+  const [searchType, setSearchType] = useState<'part_number' | 'project' | 'title' | 'part_description'>('part_number')
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [categoryFilter, setCategoryFilter] = useState<string>(filterCategory || '')
@@ -102,8 +102,14 @@ export default function DocumentList({ filterCategory, filterProject }: Document
         )
       } else if (searchType === 'title') {
         filtered = filtered.filter(d =>
-          d.title.toUpperCase().includes(q) ||
-          (d.description || '').toUpperCase().includes(q)
+          d.title.toUpperCase().includes(q)
+        )
+      } else if (searchType === 'part_description') {
+        filtered = filtered.filter(d =>
+          d.document_part_numbers?.some((p: any) =>
+            (p.description || '').toUpperCase().includes(q) ||
+            (p.mpn || '').toUpperCase().includes(q)
+          )
         )
       } else if (searchType === 'project') {
         filtered = filtered.filter(d =>
@@ -252,6 +258,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
               style={{ borderRadius: '6px 0 0 6px', borderRight: 'none', width: '140px', fontSize: '12px' }}>
               <option value="part_number">Part Number</option>
               <option value="title">Title</option>
+              <option value="part_description">Description / MPN</option>
               <option value="project">Project</option>
             </select>
           </div>
@@ -295,7 +302,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Table */}
         <div style={{ flex: 1, overflow: 'auto' }}>
-          <table className="data-table">
+          <table className="data-table" style={{ minWidth: '1000px' }}>
             <thead>
               <tr>
                 <th style={{ width: '40px' }}></th>
@@ -343,11 +350,6 @@ export default function DocumentList({ filterCategory, filterProject }: Document
                     <td style={{ fontFamily: 'monospace', fontSize: '12px', fontWeight: 500 }}>{doc.document_number}</td>
                     <td>
                       <div style={{ fontWeight: 500 }}>{doc.title}</div>
-                      {doc.description && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {doc.description}
-                        </div>
-                      )}
                     </td>
                     <td>
                       <span style={{ fontFamily: 'monospace', fontSize: '12px', padding: '2px 8px', borderRadius: '4px', background: 'var(--bg-tertiary)' }}>
@@ -416,8 +418,8 @@ export default function DocumentList({ filterCategory, filterProject }: Document
         {/* Preview Panel */}
         {previewDoc && (
           <div style={{
-            width: '400px',
-            minWidth: '400px',
+            width: '600px',
+            minWidth: '600px',
             borderLeft: '1px solid var(--border)',
             background: 'var(--bg-secondary)',
             display: 'flex',
@@ -482,32 +484,41 @@ export default function DocumentList({ filterCategory, filterProject }: Document
             <div style={{ flex: 1, overflow: 'auto' }}>
               {previewTab === 'parts' ? (
                 /* Parts List Tab */
-                <div style={{ padding: '12px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Part #</th>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Description</th>
-                        {previewDoc.document_part_numbers?.some((p: any) => p.mpn) && (
-                          <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>MPN</th>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewDoc.document_part_numbers?.map((p: any) => (
-                        <tr key={p.id}>
-                          <td style={{ padding: '6px 8px', fontSize: '12px', fontFamily: 'monospace', borderBottom: '1px solid var(--border)', color: 'var(--accent)' }}>{p.part_number}</td>
-                          <td style={{ padding: '6px 8px', fontSize: '12px', borderBottom: '1px solid var(--border)' }}>{p.description || '-'}</td>
-                          {previewDoc.document_part_numbers?.some((pp: any) => pp.mpn) && (
-                            <td style={{ padding: '6px 8px', fontSize: '12px', fontFamily: 'monospace', borderBottom: '1px solid var(--border)', color: '#34d399' }}>{p.mpn || '-'}</td>
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div style={{ padding: '8px 12px', fontSize: '12px', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+                    {previewDoc.document_part_numbers?.length || 0} part(s) linked to this document
+                  </div>
+                  <div style={{ flex: 1, overflow: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 2, textAlign: 'left', padding: '8px 10px', fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>#</th>
+                          <th style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 2, textAlign: 'left', padding: '8px 10px', fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Part Number</th>
+                          <th style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 2, textAlign: 'left', padding: '8px 10px', fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Description</th>
+                          {previewDoc.document_part_numbers?.some((p: any) => p.mpn) && (
+                            <th style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 2, textAlign: 'left', padding: '8px 10px', fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>MPN</th>
                           )}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {(!previewDoc.document_part_numbers || previewDoc.document_part_numbers.length === 0) && (
-                    <p style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '20px', fontSize: '13px' }}>No parts linked</p>
-                  )}
+                      </thead>
+                      <tbody>
+                        {previewDoc.document_part_numbers?.map((p: any, idx: number) => (
+                          <tr key={p.id} style={{ transition: 'background 0.1s' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                            <td style={{ padding: '6px 10px', fontSize: '11px', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', width: '30px' }}>{idx + 1}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', borderBottom: '1px solid var(--border)', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{p.part_number}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '12px', borderBottom: '1px solid var(--border)' }}>{p.description || '-'}</td>
+                            {previewDoc.document_part_numbers?.some((pp: any) => pp.mpn) && (
+                              <td style={{ padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', borderBottom: '1px solid var(--border)', color: '#34d399', whiteSpace: 'nowrap' }}>{p.mpn || '-'}</td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {(!previewDoc.document_part_numbers || previewDoc.document_part_numbers.length === 0) && (
+                      <p style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '20px', fontSize: '13px' }}>No parts linked</p>
+                    )}
+                  </div>
                 </div>
               ) : (
               /* File Preview Tab */
@@ -570,14 +581,9 @@ export default function DocumentList({ filterCategory, filterProject }: Document
                   ? previewDoc.document_projects.map((p: any) => p.project).join(', ')
                   : previewDoc.project || '-'
               }</span></div>
-              <div>MPN: <span style={{ color: 'var(--text-primary)' }}>{
-                previewDoc.document_part_numbers?.filter((p: any) => p.mpn).map((p: any) => p.mpn).join(', ') || '-'
-              }</span></div>
+              <div>Parts: <span style={{ color: 'var(--text-primary)' }}>{previewDoc.document_part_numbers?.length || 0}</span></div>
               <div>Uploaded: <span style={{ color: 'var(--text-primary)' }}>{format(new Date(previewDoc.created_at), 'dd MMM yyyy')}</span></div>
               <div>By: <span style={{ color: 'var(--text-primary)' }}>{(previewDoc.profiles as any)?.full_name || '-'}</span></div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                Parts: {previewDoc.document_part_numbers?.map((p: any) => p.part_number).join(', ') || '-'}
-              </div>
             </div>
           </div>
         )}

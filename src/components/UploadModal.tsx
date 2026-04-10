@@ -27,7 +27,6 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
   const [loading, setLoading] = useState(false)
 
   const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [drawingGroupId, setDrawingGroupId] = useState('')
   const [projects, setProjects] = useState<string[]>([''])
@@ -108,7 +107,7 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
         .from('documents')
         .insert({
           title,
-          description: description || null,
+          description: null,
           category_id: categoryId,
           drawing_group_id: isDrawingSpec && drawingGroupId ? drawingGroupId : null,
           project: cleanProjects[0] || null,
@@ -189,11 +188,6 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
           <div style={{ marginBottom: '16px' }}>
             <label>Title *</label>
             <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Document title" required />
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <label>Document Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional general description" rows={2} />
           </div>
 
           <div style={{ marginBottom: '16px' }}>
