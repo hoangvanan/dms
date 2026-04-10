@@ -300,9 +300,9 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       </div>
 
       {/* Main content area: table + preview panel */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {/* Table */}
-        <div style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+        <div style={{ flex: 1, overflow: 'auto' }}>
           <table className="data-table" style={{ minWidth: '1000px' }}>
             <thead>
               <tr>
@@ -421,17 +421,21 @@ export default function DocumentList({ filterCategory, filterProject }: Document
           </table>
         </div>
 
-        {/* Preview Panel */}
+        {/* Preview Panel - overlay on right side */}
         {previewDoc && (
           <div style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
             width: '600px',
-            minWidth: '600px',
-            flexShrink: 0,
             borderLeft: '1px solid var(--border)',
             background: 'var(--bg-secondary)',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
+            boxShadow: '-4px 0 20px rgba(0,0,0,0.3)',
+            zIndex: 20,
           }}>
             {/* Preview Header */}
             <div style={{
