@@ -302,12 +302,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       {/* Main content area: table + preview panel */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {/* Table */}
-        <div style={{ 
-          flex: 1, 
-          overflow: 'auto',
-          marginRight: previewDoc ? '600px' : 0,
-          transition: 'margin-right 0.2s ease',
-        }}>
+        <div style={{ flex: 1, overflow: 'auto' }}>
           <table className="data-table" style={{ minWidth: '1000px' }}>
             <thead>
               <tr>
