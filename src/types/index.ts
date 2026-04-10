@@ -65,6 +65,8 @@ export interface DocumentPartNumber {
   id: string
   document_id: string
   part_number: string
+  description: string | null
+  mpn: string | null
   created_at: string
 }
 

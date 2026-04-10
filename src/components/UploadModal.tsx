@@ -6,6 +6,12 @@ import { showToast } from './Toast'
 import { Upload, X, Plus, Trash2 } from 'lucide-react'
 import type { DocumentCategory, DrawingGroup } from '@/types'
 
+interface PartEntry {
+  part_number: string
+  description: string
+  mpn: string
+}
+
 interface UploadModalProps {
   onClose: () => void
   onSuccess: () => void
@@ -24,10 +30,8 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
   const [description, setDescription] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [drawingGroupId, setDrawingGroupId] = useState('')
-  const [project, setProject] = useState('')
   const [projects, setProjects] = useState<string[]>([''])
-  const [manufacturer, setManufacturer] = useState('')
-  const [partNumbers, setPartNumbers] = useState<string[]>([''])
+  const [parts, setParts] = useState<PartEntry[]>([{ part_number: '', description: '', mpn: '' }])
   const [file, setFile] = useState<File | null>(null)
 
   const selectedCategory = categories.find(c => c.id === categoryId)
@@ -43,6 +47,14 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
     setProjects(updated)
   }
 
+  const addPart = () => setParts([...parts, { part_number: '', description: '', mpn: '' }])
+  const removePart = (idx: number) => setParts(parts.filter((_, i) => i !== idx))
+  const updatePart = (idx: number, field: keyof PartEntry, val: string) => {
+    const updated = [...parts]
+    updated[idx] = { ...updated[idx], [field]: val }
+    setParts(updated)
+  }
+
   useEffect(() => {
     const load = async () => {
       const [catRes, dgRes] = await Promise.all([
@@ -55,27 +67,30 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
     load()
   }, [])
 
-  const addPartNumber = () => setPartNumbers([...partNumbers, ''])
-  const removePartNumber = (idx: number) => setPartNumbers(partNumbers.filter((_, i) => i !== idx))
-  const updatePartNumber = (idx: number, val: string) => {
-    const updated = [...partNumbers]
-    updated[idx] = val
-    setPartNumbers(updated)
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!file || !profile) return
 
-    const cleanParts = partNumbers.map(p => p.trim()).filter(Boolean)
+    const cleanParts = parts.filter(p => p.part_number.trim())
     if (cleanParts.length === 0) {
       showToast('At least one part number is required', 'error')
       return
     }
 
-    if (isDatasheet && !manufacturer.trim()) {
-      showToast('Manufacturer is required for Datasheet', 'error')
+    // Validate description is filled for all parts
+    const missingDesc = cleanParts.some(p => !p.description.trim())
+    if (missingDesc) {
+      showToast('Description is required for every part number', 'error')
       return
+    }
+
+    // Validate MPN for datasheet
+    if (isDatasheet) {
+      const missingMpn = cleanParts.some(p => !p.mpn.trim())
+      if (missingMpn) {
+        showToast('MPN is required for every part number (Datasheet)', 'error')
+        return
+      }
     }
 
     setLoading(true)
@@ -97,7 +112,6 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
           category_id: categoryId,
           drawing_group_id: isDrawingSpec && drawingGroupId ? drawingGroupId : null,
           project: cleanProjects[0] || null,
-          manufacturer: isDatasheet ? manufacturer.trim() : null,
           current_revision: null,
           status: 'processing',
           file_path: storagePath,
@@ -123,13 +137,16 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
         uploaded_by: profile.id,
       })
 
-      const partInserts = cleanParts.map(pn => ({
-        document_id: doc.id,
-        part_number: pn.toUpperCase(),
-      }))
-      await supabase.from('document_part_numbers').insert(partInserts)
+      // Insert parts with description + mpn
+      await supabase.from('document_part_numbers').insert(
+        cleanParts.map(p => ({
+          document_id: doc.id,
+          part_number: p.part_number.trim().toUpperCase(),
+          description: p.description.trim(),
+          mpn: isDatasheet ? p.mpn.trim() : null,
+        }))
+      )
 
-      // Insert projects into junction table
       if (cleanProjects.length > 0) {
         await supabase.from('document_projects').insert(
           cleanProjects.map(p => ({ document_id: doc.id, project: p }))
@@ -140,7 +157,7 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
         user_id: profile.id,
         action: 'upload',
         document_id: doc.id,
-        details: { title, part_numbers: cleanParts, projects: cleanProjects, category: selectedCategory?.name, manufacturer: manufacturer.trim() || null },
+        details: { title, parts: cleanParts, projects: cleanProjects, category: selectedCategory?.name },
       })
 
       showToast('Document uploaded successfully', 'success')
@@ -155,7 +172,7 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '620px' }}>
+      <div className="modal-content" style={{ maxWidth: '780px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Upload Document</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
@@ -175,8 +192,8 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
           </div>
 
           <div style={{ marginBottom: '16px' }}>
-            <label>Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional description" rows={2} />
+            <label>Document Description</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional general description" rows={2} />
           </div>
 
           <div style={{ marginBottom: '16px' }}>
@@ -188,13 +205,6 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
               ))}
             </select>
           </div>
-
-          {isDatasheet && (
-            <div style={{ marginBottom: '16px' }}>
-              <label>Manufacturer (MFR) *</label>
-              <input type="text" value={manufacturer} onChange={e => setManufacturer(e.target.value)} placeholder="e.g. Walsin, Yageo, TDK" required />
-            </div>
-          )}
 
           {isDrawingSpec && (
             <div style={{ marginBottom: '16px' }}>
@@ -227,29 +237,50 @@ export default function UploadModal({ onClose, onSuccess }: UploadModalProps) {
             </div>
           )}
 
+          {/* Part Numbers with Description + MPN */}
           <div style={{ marginBottom: '20px' }}>
             <label>Part Numbers *</label>
-            {partNumbers.map((pn, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isDatasheet ? '1fr 1.5fr 1fr 32px' : '1fr 1.5fr 32px', gap: '6px', marginBottom: '6px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Part Number</div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Description</div>
+              {isDatasheet && <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>MPN</div>}
+              <div></div>
+            </div>
+            {parts.map((part, idx) => (
+              <div key={idx} style={{ display: 'grid', gridTemplateColumns: isDatasheet ? '1fr 1.5fr 1fr 32px' : '1fr 1.5fr 32px', gap: '6px', marginBottom: '6px' }}>
                 <input
                   type="text"
-                  value={pn}
-                  onChange={e => updatePartNumber(idx, e.target.value)}
-                  placeholder="e.g. 20005678"
+                  value={part.part_number}
+                  onChange={e => updatePart(idx, 'part_number', e.target.value)}
+                  placeholder="20005678"
+                  style={{ fontSize: '12px' }}
                 />
-                {partNumbers.length > 1 && (
-                  <button type="button" onClick={() => removePartNumber(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px' }}>
-                    <Trash2 size={16} />
-                  </button>
+                <input
+                  type="text"
+                  value={part.description}
+                  onChange={e => updatePart(idx, 'description', e.target.value)}
+                  placeholder="MLCC 100nF 0402 X7R 16V"
+                  style={{ fontSize: '12px' }}
+                />
+                {isDatasheet && (
+                  <input
+                    type="text"
+                    value={part.mpn}
+                    onChange={e => updatePart(idx, 'mpn', e.target.value)}
+                    placeholder="GRM155R71C104KA88D"
+                    style={{ fontSize: '12px' }}
+                  />
                 )}
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  {parts.length > 1 && (
+                    <button type="button" onClick={() => removePart(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px' }}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
-            <button
-              type="button"
-              onClick={addPartNumber}
-              className="btn btn-secondary"
-              style={{ marginTop: '4px', fontSize: '12px', padding: '4px 10px' }}
-            >
+            <button type="button" onClick={addPart} className="btn btn-secondary" style={{ marginTop: '4px', fontSize: '12px', padding: '4px 10px' }}>
               <Plus size={14} /> Add Part Number
             </button>
           </div>

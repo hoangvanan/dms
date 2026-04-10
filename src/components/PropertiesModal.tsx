@@ -6,6 +6,12 @@ import { showToast } from './Toast'
 import { X, Save, Plus, Trash2 } from 'lucide-react'
 import type { Document, DocumentCategory, DrawingGroup } from '@/types'
 
+interface PartEntry {
+  part_number: string
+  description: string
+  mpn: string
+}
+
 interface PropertiesModalProps {
   document: Document
   onClose: () => void
@@ -26,8 +32,7 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
   const [categoryId, setCategoryId] = useState(doc.category_id)
   const [drawingGroupId, setDrawingGroupId] = useState(doc.drawing_group_id || '')
   const [projects, setProjects] = useState<string[]>([])
-  const [manufacturer, setManufacturer] = useState((doc as any).manufacturer || '')
-  const [partNumbers, setPartNumbers] = useState<string[]>([])
+  const [parts, setParts] = useState<PartEntry[]>([])
 
   const selectedCategory = categories.find(c => c.id === categoryId)
   const isDrawingSpec = selectedCategory?.name === 'Drawing/Specification'
@@ -44,7 +49,13 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
       ])
       if (catRes.data) setCategories(catRes.data)
       if (dgRes.data) setDrawingGroups(dgRes.data)
-      if (pnRes.data) setPartNumbers(pnRes.data.map(p => p.part_number))
+      if (pnRes.data) {
+        setParts(pnRes.data.map(p => ({
+          part_number: p.part_number,
+          description: p.description || '',
+          mpn: p.mpn || '',
+        })))
+      }
       if (projRes.data && projRes.data.length > 0) {
         setProjects(projRes.data.map(p => p.project))
       } else if (doc.project) {
@@ -62,26 +73,39 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
     setProjects(updated)
   }
 
-  const addPartNumber = () => setPartNumbers([...partNumbers, ''])
-  const removePartNumber = (idx: number) => setPartNumbers(partNumbers.filter((_, i) => i !== idx))
-  const updatePartNumber = (idx: number, val: string) => {
-    const updated = [...partNumbers]
-    updated[idx] = val
-    setPartNumbers(updated)
+  const addPart = () => setParts([...parts, { part_number: '', description: '', mpn: '' }])
+  const removePart = (idx: number) => setParts(parts.filter((_, i) => i !== idx))
+  const updatePart = (idx: number, field: keyof PartEntry, val: string) => {
+    const updated = [...parts]
+    updated[idx] = { ...updated[idx], [field]: val }
+    setParts(updated)
   }
 
   const handleSave = async () => {
-    const cleanParts = partNumbers.map(p => p.trim()).filter(Boolean)
+    const cleanParts = parts.filter(p => p.part_number.trim())
     if (cleanParts.length === 0) {
       showToast('At least one part number is required', 'error')
       return
+    }
+
+    const missingDesc = cleanParts.some(p => !p.description.trim())
+    if (missingDesc) {
+      showToast('Description is required for every part number', 'error')
+      return
+    }
+
+    if (isDatasheet) {
+      const missingMpn = cleanParts.some(p => !p.mpn.trim())
+      if (missingMpn) {
+        showToast('MPN is required for every part number (Datasheet)', 'error')
+        return
+      }
     }
 
     const cleanProjects = projects.map(p => p.trim()).filter(Boolean)
 
     setLoading(true)
     try {
-      // 1. Update document
       const { error } = await supabase
         .from('documents')
         .update({
@@ -90,19 +114,23 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
           category_id: categoryId,
           drawing_group_id: isDrawingSpec && drawingGroupId ? drawingGroupId : null,
           project: cleanProjects[0] || null,
-          manufacturer: isDatasheet ? manufacturer.trim() || null : null,
         })
         .eq('id', doc.id)
 
       if (error) throw error
 
-      // 2. Replace part numbers
+      // Replace part numbers with description + mpn
       await supabase.from('document_part_numbers').delete().eq('document_id', doc.id)
       await supabase.from('document_part_numbers').insert(
-        cleanParts.map(pn => ({ document_id: doc.id, part_number: pn.toUpperCase() }))
+        cleanParts.map(p => ({
+          document_id: doc.id,
+          part_number: p.part_number.trim().toUpperCase(),
+          description: p.description.trim(),
+          mpn: isDatasheet ? p.mpn.trim() : null,
+        }))
       )
 
-      // 3. Replace projects
+      // Replace projects
       await supabase.from('document_projects').delete().eq('document_id', doc.id)
       if (cleanProjects.length > 0) {
         await supabase.from('document_projects').insert(
@@ -110,14 +138,11 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
         )
       }
 
-      // 4. Audit log
       await supabase.from('audit_log').insert({
         user_id: profile!.id,
         action: 'edit_metadata',
         document_id: doc.id,
-        details: {
-          changes: { title, description, projects: cleanProjects, part_numbers: cleanParts },
-        },
+        details: { changes: { title, description, projects: cleanProjects, parts: cleanParts } },
       })
 
       showToast('Properties updated', 'success')
@@ -132,7 +157,7 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '560px' }}>
+      <div className="modal-content" style={{ maxWidth: '780px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <div>
             <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Properties</h2>
@@ -163,14 +188,13 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
           </div>
         </div>
 
-        {/* Editable fields */}
         <div style={{ marginBottom: '16px' }}>
           <label>Title</label>
           <input type="text" value={title} onChange={e => setTitle(e.target.value)} disabled={!canEdit} />
         </div>
 
         <div style={{ marginBottom: '16px' }}>
-          <label>Description</label>
+          <label>Document Description</label>
           <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} disabled={!canEdit} />
         </div>
 
@@ -180,13 +204,6 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
-
-        {isDatasheet && (
-          <div style={{ marginBottom: '16px' }}>
-            <label>Manufacturer (MFR) {canEdit ? '*' : ''}</label>
-            <input type="text" value={manufacturer} onChange={e => setManufacturer(e.target.value)} disabled={!canEdit} placeholder="e.g. Walsin, Yageo, TDK" />
-          </div>
-        )}
 
         {isDrawingSpec && (
           <div style={{ marginBottom: '16px' }}>
@@ -219,21 +236,34 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
           </div>
         )}
 
+        {/* Part Numbers with Description + MPN */}
         <div style={{ marginBottom: '20px' }}>
           <label>Part Numbers</label>
-          {partNumbers.map((pn, idx) => (
-            <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
-              <input type="text" value={pn} onChange={e => updatePartNumber(idx, e.target.value)} disabled={!canEdit} />
-              {canEdit && partNumbers.length > 1 && (
-                <button type="button" onClick={() => removePartNumber(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}>
-                  <Trash2 size={16} />
-                </button>
+          <div style={{ display: 'grid', gridTemplateColumns: isDatasheet ? '1fr 1.5fr 1fr 32px' : '1fr 1.5fr 32px', gap: '6px', marginBottom: '6px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Part Number</div>
+            <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Description</div>
+            {isDatasheet && <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>MPN</div>}
+            <div></div>
+          </div>
+          {parts.map((part, idx) => (
+            <div key={idx} style={{ display: 'grid', gridTemplateColumns: isDatasheet ? '1fr 1.5fr 1fr 32px' : '1fr 1.5fr 32px', gap: '6px', marginBottom: '6px' }}>
+              <input type="text" value={part.part_number} onChange={e => updatePart(idx, 'part_number', e.target.value)} disabled={!canEdit} style={{ fontSize: '12px' }} />
+              <input type="text" value={part.description} onChange={e => updatePart(idx, 'description', e.target.value)} disabled={!canEdit} style={{ fontSize: '12px' }} />
+              {isDatasheet && (
+                <input type="text" value={part.mpn} onChange={e => updatePart(idx, 'mpn', e.target.value)} disabled={!canEdit} style={{ fontSize: '12px' }} />
               )}
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                {canEdit && parts.length > 1 && (
+                  <button type="button" onClick={() => removePart(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}>
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
           {canEdit && (
-            <button type="button" onClick={addPartNumber} className="btn btn-secondary" style={{ fontSize: '12px', padding: '4px 10px' }}>
-              <Plus size={14} /> Add
+            <button type="button" onClick={addPart} className="btn btn-secondary" style={{ fontSize: '12px', padding: '4px 10px' }}>
+              <Plus size={14} /> Add Part Number
             </button>
           )}
         </div>
