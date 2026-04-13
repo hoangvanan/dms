@@ -47,10 +47,11 @@ export default function ContextMenu({
   const adjustedY = Math.min(y, window.innerHeight - 300)
 
   const isAdmin = profile?.role === 'admin'
+  const isDatasheet = (doc.document_categories as any)?.name === 'Datasheet'
   const canVerify = canEdit && doc.status === 'processing'
-  // Admin can always release; editors can only release if different person verified
-  const canRelease = canEdit && doc.status === 'verification' && (isAdmin || doc.verified_by !== profile?.id)
-  const isEditorBlocked = !isAdmin && doc.status === 'verification' && doc.verified_by === profile?.id
+  // Admin can always release; Datasheet: editors can self-release; Others: 4-eyes rule
+  const canRelease = canEdit && doc.status === 'verification' && (isAdmin || isDatasheet || doc.verified_by !== profile?.id)
+  const isEditorBlocked = !isAdmin && !isDatasheet && doc.status === 'verification' && doc.verified_by === profile?.id
   const canUploadRev = canEdit && doc.status === 'released'
 
   return (
