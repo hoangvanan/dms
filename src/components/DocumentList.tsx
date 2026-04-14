@@ -269,14 +269,23 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       if (uploadError) throw uploadError
 
       // Update document metadata
+      // If document was in verification, reset to processing and clear verification
+      const wasVerification = doc.status === 'verification'
+      const updateData: Record<string, any> = {
+        file_path: newPath,
+        file_name: file.name,
+        file_size: file.size,
+        file_type: fileExt,
+      }
+      if (wasVerification) {
+        updateData.status = 'processing'
+        updateData.verified_by = null
+        updateData.verified_at = null
+      }
+
       const { error: updateError } = await supabase
         .from('documents')
-        .update({
-          file_path: newPath,
-          file_name: file.name,
-          file_size: file.size,
-          file_type: fileExt,
-        })
+        .update(updateData)
         .eq('id', doc.id)
       if (updateError) throw updateError
 
@@ -290,6 +299,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
           old_file: doc.file_name,
           new_file: file.name,
           document_number: doc.document_number,
+          status_reset: wasVerification ? 'verification → processing' : null,
         },
       })
 
@@ -299,7 +309,12 @@ export default function DocumentList({ filterCategory, filterProject }: Document
         setPreviewUrl(null)
       }
 
-      showToast(`File replaced: ${file.name}`, 'success')
+      showToast(
+        wasVerification
+          ? `File replaced: ${file.name} — Status reset to Processing`
+          : `File replaced: ${file.name}`,
+        'success'
+      )
       fetchDocuments()
     } catch (err: any) {
       showToast(err.message || 'Replace file failed', 'error')

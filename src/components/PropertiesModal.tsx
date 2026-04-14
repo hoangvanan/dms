@@ -121,7 +121,7 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
 
       // Replace part numbers with description + mpn
       await supabase.from('document_part_numbers').delete().eq('document_id', doc.id)
-      await supabase.from('document_part_numbers').insert(
+      const { error: pnError } = await supabase.from('document_part_numbers').insert(
         cleanParts.map(p => ({
           document_id: doc.id,
           part_number: p.part_number.trim().toUpperCase(),
@@ -129,13 +129,15 @@ export default function PropertiesModal({ document: doc, onClose, onSuccess }: P
           mpn: isDatasheet ? p.mpn.trim() : null,
         }))
       )
+      if (pnError) throw pnError
 
       // Replace projects
       await supabase.from('document_projects').delete().eq('document_id', doc.id)
       if (cleanProjects.length > 0) {
-        await supabase.from('document_projects').insert(
+        const { error: projError } = await supabase.from('document_projects').insert(
           cleanProjects.map(p => ({ document_id: doc.id, project: p }))
         )
+        if (projError) throw projError
       }
 
       await supabase.from('audit_log').insert({
