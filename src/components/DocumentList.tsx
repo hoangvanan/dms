@@ -53,6 +53,12 @@ export default function DocumentList({ filterCategory, filterProject }: Document
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewTab, setPreviewTab] = useState<'file' | 'parts'>('file')
 
+  // Replace file
+  const [replaceTarget, setReplaceTarget] = useState<Document | null>(null)
+  const replaceFileRef = useCallback((node: HTMLInputElement | null) => {
+    if (node && replaceTarget) node.click()
+  }, [replaceTarget])
+
   // Context menu
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; doc: Document } | null>(null)
 
@@ -245,6 +251,58 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       fetchDocuments()
     } catch (err: any) {
       showToast(err.message || 'Delete failed', 'error')
+    }
+  }
+
+  const handleReplaceFile = async (doc: Document, file: File) => {
+    try {
+      // Delete old file from storage
+      await supabase.storage.from('documents').remove([doc.file_path])
+
+      // Upload new file with same path structure
+      const fileExt = file.name.split('.').pop() || ''
+      const newPath = `${doc.id}/${Date.now()}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(newPath, file)
+      if (uploadError) throw uploadError
+
+      // Update document metadata
+      const { error: updateError } = await supabase
+        .from('documents')
+        .update({
+          file_path: newPath,
+          file_name: file.name,
+          file_size: file.size,
+          file_type: fileExt,
+        })
+        .eq('id', doc.id)
+      if (updateError) throw updateError
+
+      // Audit log
+      await supabase.from('audit_log').insert({
+        user_id: profile!.id,
+        action: 'edit_metadata',
+        document_id: doc.id,
+        details: {
+          action: 'replace_file',
+          old_file: doc.file_name,
+          new_file: file.name,
+          document_number: doc.document_number,
+        },
+      })
+
+      // Refresh preview if this doc is currently previewed
+      if (previewDoc?.id === doc.id) {
+        setPreviewDoc(null)
+        setPreviewUrl(null)
+      }
+
+      showToast(`File replaced: ${file.name}`, 'success')
+      fetchDocuments()
+    } catch (err: any) {
+      showToast(err.message || 'Replace file failed', 'error')
     }
   }
 
@@ -613,6 +671,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
           onVerify={() => { handleVerify(ctxMenu.doc); setCtxMenu(null) }}
           onRelease={() => { handleRelease(ctxMenu.doc); setCtxMenu(null) }}
           onDelete={() => { setConfirmDelete(ctxMenu.doc); setCtxMenu(null) }}
+          onReplaceFile={() => { setReplaceTarget(ctxMenu.doc); setCtxMenu(null) }}
         />
       )}
 
@@ -644,6 +703,22 @@ export default function DocumentList({ filterCategory, filterProject }: Document
       {showProperties && <PropertiesModal document={showProperties} onClose={() => setShowProperties(null)} onSuccess={fetchDocuments} />}
       {showRevision && <RevisionModal document={showRevision} onClose={() => setShowRevision(null)} onSuccess={fetchDocuments} />}
       {showHistory && <HistoryModal document={showHistory} onClose={() => setShowHistory(null)} />}
+
+      {/* Hidden file input for Replace File */}
+      {replaceTarget && (
+        <input
+          type="file"
+          ref={replaceFileRef}
+          style={{ display: 'none' }}
+          onChange={async (e) => {
+            const file = e.target.files?.[0]
+            if (file && replaceTarget) {
+              await handleReplaceFile(replaceTarget, file)
+            }
+            setReplaceTarget(null)
+          }}
+        />
+      )}
     </div>
   )
 }

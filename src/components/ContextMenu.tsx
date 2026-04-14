@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef } from 'react'
 import { useAuth } from './AuthProvider'
-import { FileSearch, Upload, History, Download, CheckCircle, Unlock, Trash2 } from 'lucide-react'
+import { FileSearch, Upload, History, Download, CheckCircle, Unlock, Trash2, RefreshCw } from 'lucide-react'
 import type { Document } from '@/types'
 
 interface ContextMenuProps {
@@ -16,12 +16,13 @@ interface ContextMenuProps {
   onVerify: () => void
   onRelease: () => void
   onDelete: () => void
+  onReplaceFile: () => void
 }
 
 export default function ContextMenu({
   x, y, document: doc, onClose,
   onProperties, onUploadRevision, onViewHistory, onDownload,
-  onVerify, onRelease, onDelete,
+  onVerify, onRelease, onDelete, onReplaceFile,
 }: ContextMenuProps) {
   const { profile } = useAuth()
   const ref = useRef<HTMLDivElement>(null)
@@ -53,6 +54,7 @@ export default function ContextMenu({
   const canRelease = canEdit && doc.status === 'verification' && (isAdmin || isDatasheet || doc.verified_by !== profile?.id)
   const isEditorBlocked = !isAdmin && !isDatasheet && doc.status === 'verification' && doc.verified_by === profile?.id
   const canUploadRev = canEdit && doc.status === 'released'
+  const canReplaceFile = canEdit && (doc.status === 'processing' || doc.status === 'verification')
 
   return (
     <div ref={ref} className="context-menu" style={{ left: adjustedX, top: adjustedY }}>
@@ -85,6 +87,12 @@ export default function ContextMenu({
           {isEditorBlocked && (
             <div className="context-menu-item" style={{ color: 'var(--text-secondary)', cursor: 'default', opacity: 0.5 }}>
               <Unlock size={14} /> Release (4-eyes: needs different editor)
+            </div>
+          )}
+
+          {canReplaceFile && (
+            <div className="context-menu-item" onClick={onReplaceFile}>
+              <RefreshCw size={14} color="var(--warning)" /> Replace File
             </div>
           )}
 
