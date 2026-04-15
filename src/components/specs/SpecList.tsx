@@ -332,7 +332,7 @@ function ActionsMenu({ variant, position, onClose, onEdit, onDelete }: ActionsMe
 // Main SpecList Component
 // ============================================================================
 
-export default function SpecList() {
+export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: string) => void }) {
   const { profile } = useAuth()
 
   const [variants, setVariants] = useState<SpecVariant[]>([])
@@ -399,9 +399,11 @@ export default function SpecList() {
     }
   }
 
-  // Edit placeholder — will navigate to editor in Task 5
+  // Navigate to editor
   const handleEdit = (variant: SpecVariant) => {
-    showToast('Editor will be available in the next update', 'info')
+    if (onEditSpec) {
+      onEditSpec(variant.variant_id)
+    }
   }
 
   const handleActionsClick = (e: React.MouseEvent, variant: SpecVariant) => {

@@ -10,12 +10,31 @@ import ManageUsers from '@/components/ManageUsers'
 import ManageCategories from '@/components/ManageCategories'
 import AuditLogView from '@/components/AuditLog'
 import SpecList from '@/components/specs/SpecList'
+import SpecEditor from '@/components/specs/SpecEditor'
 import ProductManager from '@/components/specs/management/ProductManager'
 import CustomerManager from '@/components/specs/management/CustomerManager'
 import MarketConfigManager from '@/components/specs/management/MarketConfigManager'
 
 function DashboardContent() {
   const [activeTab, setActiveTab] = useState('documents')
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    if (tab !== 'spec-editor') {
+      setSelectedVariantId(null)
+    }
+  }
+
+  const handleEditSpec = (variantId: string) => {
+    setSelectedVariantId(variantId)
+    setActiveTab('spec-editor')
+  }
+
+  const handleBackToList = () => {
+    setSelectedVariantId(null)
+    setActiveTab('specifications')
+  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -32,7 +51,13 @@ function DashboardContent() {
       case 'audit':
         return <AuditLogView />
       case 'specifications':
-        return <SpecList />
+        return <SpecList onEditSpec={handleEditSpec} />
+      case 'spec-editor':
+        return selectedVariantId ? (
+          <SpecEditor variantId={selectedVariantId} onBack={handleBackToList} />
+        ) : (
+          <SpecList onEditSpec={handleEditSpec} />
+        )
       case 'spec-products':
         return <ProductManager />
       case 'spec-customers':
@@ -46,7 +71,7 @@ function DashboardContent() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      <Sidebar activeTab={activeTab === 'spec-editor' ? 'specifications' : activeTab} onTabChange={handleTabChange} />
       {renderContent()}
       <ToastContainer />
     </div>

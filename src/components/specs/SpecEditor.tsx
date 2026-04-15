@@ -1,0 +1,442 @@
+'use client'
+import { useState, useEffect, useCallback } from 'react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { ArrowLeft, Save, Loader2 } from 'lucide-react'
+import { useAuth } from '../AuthProvider'
+import { showToast } from '../Toast'
+import { createClient } from '@/lib/supabase'
+import {
+  fetchSpecVariant,
+  fetchBlocksOrdered,
+  computeBlockNumbering,
+  canEdit,
+  getStatusColor,
+  formatSpecDate,
+} from '@/lib/spec-helpers'
+import type {
+  SpecVariantFull,
+  SpecBlock,
+  BlockType,
+  BlockContent,
+  NumberedBlock,
+  SectionHeaderContent,
+  SubsectionHeaderContent,
+  KeyValueTableContent,
+  DataTableContent,
+  ImageContent,
+  TextContent,
+} from '@/types/specs'
+import BlockContainer from './blocks/BlockContainer'
+import AddBlockMenu from './blocks/AddBlockMenu'
+
+// ============================================================================
+// Default content for new blocks
+// ============================================================================
+
+function getDefaultContent(blockType: BlockType): BlockContent {
+  switch (blockType) {
+    case 'section_header':
+      return { title: 'New Section' } as SectionHeaderContent
+    case 'subsection_header':
+      return { title: 'New Subsection' } as SubsectionHeaderContent
+    case 'key_value_table':
+      return { rows: [{ label: '', value: '' }] } as KeyValueTableContent
+    case 'data_table':
+      return { columns: ['Column 1', 'Column 2'], rows: [['', '']] } as DataTableContent
+    case 'image':
+      return { asset_id: '', width_percent: 100, caption: '' } as ImageContent
+    case 'text':
+      return { html: '<p></p>' } as TextContent
+    case 'page_break':
+      return {} as BlockContent
+    case 'predefined_cover':
+      return {} as BlockContent
+    case 'predefined_test_conditions':
+      return {} as BlockContent
+    case 'predefined_protective':
+      return { items: [] } as BlockContent
+    case 'predefined_general_indices':
+      return { clauses: [] } as BlockContent
+    case 'predefined_warnings':
+      return { text: '' } as BlockContent
+    default:
+      return {} as BlockContent
+  }
+}
+
+// ============================================================================
+// Placeholder block editor (Task 6 will replace these)
+// ============================================================================
+
+function PlaceholderEditor({ block, onUpdate }: { block: SpecBlock; onUpdate: (content: any) => void }) {
+  const content = block.content as any
+
+  // Simple inline editors for headers
+  if (block.block_type === 'section_header' || block.block_type === 'subsection_header') {
+    return (
+      <input
+        value={content?.title || ''}
+        onChange={(e) => onUpdate({ ...content, title: e.target.value })}
+        placeholder={block.block_type === 'section_header' ? 'Section title...' : 'Subsection title...'}
+        style={{
+          width: '100%', padding: '6px 8px', borderRadius: '4px',
+          border: '1px solid var(--border)', background: 'var(--bg-primary)',
+          color: 'var(--text-primary)',
+          fontSize: block.block_type === 'section_header' ? '16px' : '14px',
+          fontWeight: 600, outline: 'none',
+        }}
+      />
+    )
+  }
+
+  // Page break
+  if (block.block_type === 'page_break') {
+    return (
+      <div style={{
+        borderTop: '2px dashed var(--border)', textAlign: 'center', padding: '4px',
+        fontSize: '11px', color: 'var(--text-secondary)',
+      }}>
+        — Page Break —
+      </div>
+    )
+  }
+
+  // All others: placeholder
+  return (
+    <div style={{
+      padding: '12px', background: 'var(--bg-primary)', borderRadius: '6px',
+      fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'center',
+    }}>
+      Block editor for "{block.block_type}" will be available in the next update.
+    </div>
+  )
+}
+
+// ============================================================================
+// Main SpecEditor Component
+// ============================================================================
+
+interface SpecEditorProps {
+  variantId: string
+  onBack: () => void
+}
+
+export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
+  const { profile } = useAuth()
+  const [variant, setVariant] = useState<SpecVariantFull | null>(null)
+  const [blocks, setBlocks] = useState<SpecBlock[]>([])
+  const [numberedBlocks, setNumberedBlocks] = useState<NumberedBlock[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [hasChanges, setHasChanges] = useState(false)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  // Load variant + blocks
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const v = await fetchSpecVariant(variantId)
+      if (!v) {
+        showToast('Specification not found', 'error')
+        onBack()
+        return
+      }
+      setVariant(v)
+      setBlocks(v.blocks)
+      setNumberedBlocks(computeBlockNumbering(v.blocks))
+    } catch (err) {
+      console.error('Load error:', err)
+      showToast('Failed to load specification', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [variantId, onBack])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  // Recompute numbering when blocks change
+  useEffect(() => {
+    setNumberedBlocks(computeBlockNumbering(blocks))
+  }, [blocks])
+
+  const isLocked = variant ? !canEdit(variant).allowed : true
+
+  // ---- Block operations ----
+
+  const handleAddBlock = async (blockType: BlockType) => {
+    if (isLocked) return
+
+    const newBlock: Partial<SpecBlock> = {
+      variant_id: variantId,
+      block_type: blockType,
+      sort_order: blocks.length,
+      content: getDefaultContent(blockType),
+    }
+
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('spec_blocks')
+        .insert(newBlock)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setBlocks(prev => [...prev, data as SpecBlock])
+      setHasChanges(true)
+      showToast('Block added', 'success')
+    } catch (err: any) {
+      showToast(err.message || 'Failed to add block', 'error')
+    }
+  }
+
+  const handleUpdateBlock = async (blockId: string, content: any) => {
+    if (isLocked) return
+
+    // Optimistic update
+    setBlocks(prev =>
+      prev.map(b => b.block_id === blockId ? { ...b, content } : b)
+    )
+    setHasChanges(true)
+  }
+
+  const handleDeleteBlock = async (blockId: string) => {
+    if (isLocked) return
+
+    const confirm = window.confirm('Delete this block?')
+    if (!confirm) return
+
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('spec_blocks')
+        .delete()
+        .eq('block_id', blockId)
+
+      if (error) throw error
+
+      setBlocks(prev => prev.filter(b => b.block_id !== blockId))
+      setHasChanges(true)
+      showToast('Block deleted', 'success')
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete block', 'error')
+    }
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    setBlocks(prev => {
+      const oldIndex = prev.findIndex(b => b.block_id === active.id)
+      const newIndex = prev.findIndex(b => b.block_id === over.id)
+
+      // Don't allow moving the cover page (always first)
+      if (prev[oldIndex]?.block_type === 'predefined_cover') return prev
+      if (newIndex === 0 && prev[0]?.block_type === 'predefined_cover') return prev
+
+      return arrayMove(prev, oldIndex, newIndex)
+    })
+    setHasChanges(true)
+  }
+
+  // Save all block changes (content + order)
+  const handleSave = async () => {
+    if (!variant || isLocked) return
+    setSaving(true)
+
+    try {
+      const supabase = createClient()
+
+      // Batch update all blocks with new sort_order and content
+      const updates = blocks.map((block, index) => ({
+        block_id: block.block_id,
+        variant_id: block.variant_id,
+        block_type: block.block_type,
+        sort_order: index,
+        content: block.content,
+      }))
+
+      // Upsert all blocks
+      const { error } = await supabase
+        .from('spec_blocks')
+        .upsert(updates, { onConflict: 'block_id' })
+
+      if (error) throw error
+
+      // Update variant's updated_by
+      await supabase
+        .from('spec_variants')
+        .update({ updated_by: profile?.id })
+        .eq('variant_id', variantId)
+
+      setHasChanges(false)
+      showToast('Saved successfully', 'success')
+    } catch (err: any) {
+      showToast(err.message || 'Failed to save', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ---- Render ----
+
+  if (loading) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} color="var(--text-secondary)" />
+      </div>
+    )
+  }
+
+  if (!variant) return null
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Top Bar */}
+      <div style={{
+        padding: '12px 20px',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+      }}>
+        {/* Back button */}
+        <button
+          onClick={onBack}
+          style={{
+            background: 'none', border: 'none', color: 'var(--text-secondary)',
+            cursor: 'pointer', padding: '4px', display: 'flex',
+          }}
+          title="Back to list"
+        >
+          <ArrowLeft size={20} />
+        </button>
+
+        {/* Variant info */}
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '15px', fontWeight: 600 }}>
+            {variant.type_designation}
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', gap: '12px', marginTop: '2px' }}>
+            <span>{variant.umevs_part_no}</span>
+            {variant.spec_customers && <span>{variant.spec_customers.name}</span>}
+            {variant.spec_market_configs && <span>{variant.spec_market_configs.market_code}</span>}
+            {variant.spec_date && <span>{formatSpecDate(variant.spec_date)}</span>}
+          </div>
+        </div>
+
+        {/* Status badge */}
+        <span style={{
+          fontSize: '11px', fontWeight: 500, padding: '3px 10px', borderRadius: '12px',
+          background: `${getStatusColor(variant.status)}20`,
+          color: getStatusColor(variant.status),
+          textTransform: 'capitalize',
+        }}>
+          {variant.status}
+        </span>
+
+        {/* Save button */}
+        <button
+          onClick={handleSave}
+          disabled={!hasChanges || saving || isLocked}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '7px 14px', borderRadius: '6px', border: 'none',
+            background: hasChanges && !isLocked ? 'var(--accent)' : 'var(--bg-tertiary)',
+            color: hasChanges && !isLocked ? '#fff' : 'var(--text-secondary)',
+            fontSize: '13px', fontWeight: 500,
+            cursor: hasChanges && !isLocked ? 'pointer' : 'not-allowed',
+          }}
+        >
+          {saving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={14} />}
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+
+      {/* Editor Area */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+        {isLocked && (
+          <div style={{
+            padding: '10px 14px', marginBottom: '12px', borderRadius: '8px',
+            background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)',
+            fontSize: '12px', color: '#ef4444',
+          }}>
+            This specification is released and cannot be edited. Create a new revision to make changes.
+          </div>
+        )}
+
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={blocks.map(b => b.block_id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {numberedBlocks.map((block) => (
+              <BlockContainer
+                key={block.block_id}
+                block={block}
+                number={block.number}
+                isLocked={isLocked}
+                onUpdate={handleUpdateBlock}
+                onDelete={handleDeleteBlock}
+              >
+                <PlaceholderEditor
+                  block={block}
+                  onUpdate={(content) => handleUpdateBlock(block.block_id, content)}
+                />
+              </BlockContainer>
+            ))}
+          </SortableContext>
+        </DndContext>
+
+        {/* Add Block */}
+        {!isLocked && (
+          <div style={{ marginTop: '8px', marginBottom: '40px' }}>
+            <AddBlockMenu onAdd={handleAddBlock} disabled={isLocked} />
+          </div>
+        )}
+
+        {blocks.length === 0 && !isLocked && (
+          <div style={{
+            textAlign: 'center', padding: '40px', color: 'var(--text-secondary)', fontSize: '13px',
+          }}>
+            No blocks yet. Click "Add Block" to start building your specification.
+          </div>
+        )}
+      </div>
+
+      {/* CSS for spinner animation */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  )
+}
