@@ -9,6 +9,10 @@ import BrowseByProject from '@/components/BrowseByProject'
 import ManageUsers from '@/components/ManageUsers'
 import ManageCategories from '@/components/ManageCategories'
 import AuditLogView from '@/components/AuditLog'
+import SpecList from '@/components/specs/SpecList'
+import ProductManager from '@/components/specs/management/ProductManager'
+import CustomerManager from '@/components/specs/management/CustomerManager'
+import MarketConfigManager from '@/components/specs/management/MarketConfigManager'
 
 function DashboardContent() {
   const [activeTab, setActiveTab] = useState('documents')
@@ -27,6 +31,14 @@ function DashboardContent() {
         return <ManageCategories />
       case 'audit':
         return <AuditLogView />
+      case 'specifications':
+        return <SpecList />
+      case 'spec-products':
+        return <ProductManager />
+      case 'spec-customers':
+        return <CustomerManager />
+      case 'spec-market-configs':
+        return <MarketConfigManager />
       default:
         return <DocumentList />
     }
