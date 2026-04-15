@@ -42,6 +42,13 @@ import type {
 } from '@/types/specs'
 import BlockContainer from './blocks/BlockContainer'
 import AddBlockMenu from './blocks/AddBlockMenu'
+import SectionHeaderEditor from './blocks/SectionHeader'
+import SubsectionHeaderEditor from './blocks/SubsectionHeader'
+import KeyValueTableEditor from './blocks/KeyValueTable'
+import DataTableEditor from './blocks/DataTable'
+import ImageBlockEditor from './blocks/ImageBlock'
+import TextBlockEditor from './blocks/TextBlock'
+import PageBreakEditor from './blocks/PageBreak'
 
 // ============================================================================
 // Default content for new blocks
@@ -82,48 +89,35 @@ function getDefaultContent(blockType: BlockType): BlockContent {
 // Placeholder block editor (Task 6 will replace these)
 // ============================================================================
 
-function PlaceholderEditor({ block, onUpdate }: { block: SpecBlock; onUpdate: (content: any) => void }) {
+function BlockEditor({ block, onUpdate, disabled }: { block: SpecBlock; onUpdate: (content: any) => void; disabled: boolean }) {
   const content = block.content as any
 
-  // Simple inline editors for headers
-  if (block.block_type === 'section_header' || block.block_type === 'subsection_header') {
-    return (
-      <input
-        value={content?.title || ''}
-        onChange={(e) => onUpdate({ ...content, title: e.target.value })}
-        placeholder={block.block_type === 'section_header' ? 'Section title...' : 'Subsection title...'}
-        style={{
-          width: '100%', padding: '6px 8px', borderRadius: '4px',
-          border: '1px solid var(--border)', background: 'var(--bg-primary)',
-          color: 'var(--text-primary)',
-          fontSize: block.block_type === 'section_header' ? '16px' : '14px',
-          fontWeight: 600, outline: 'none',
-        }}
-      />
-    )
+  switch (block.block_type) {
+    case 'section_header':
+      return <SectionHeaderEditor content={content} onChange={onUpdate} disabled={disabled} />
+    case 'subsection_header':
+      return <SubsectionHeaderEditor content={content} onChange={onUpdate} disabled={disabled} />
+    case 'key_value_table':
+      return <KeyValueTableEditor content={content} onChange={onUpdate} disabled={disabled} />
+    case 'data_table':
+      return <DataTableEditor content={content} onChange={onUpdate} disabled={disabled} />
+    case 'image':
+      return <ImageBlockEditor content={content} onChange={onUpdate} disabled={disabled} />
+    case 'text':
+      return <TextBlockEditor content={content} onChange={onUpdate} disabled={disabled} />
+    case 'page_break':
+      return <PageBreakEditor />
+    default:
+      // Predefined blocks — placeholder until Task 7
+      return (
+        <div style={{
+          padding: '12px', background: 'var(--bg-primary)', borderRadius: '6px',
+          fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'center',
+        }}>
+          Predefined block editor for &ldquo;{block.block_type}&rdquo; will be available in the next update.
+        </div>
+      )
   }
-
-  // Page break
-  if (block.block_type === 'page_break') {
-    return (
-      <div style={{
-        borderTop: '2px dashed var(--border)', textAlign: 'center', padding: '4px',
-        fontSize: '11px', color: 'var(--text-secondary)',
-      }}>
-        — Page Break —
-      </div>
-    )
-  }
-
-  // All others: placeholder
-  return (
-    <div style={{
-      padding: '12px', background: 'var(--bg-primary)', borderRadius: '6px',
-      fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'center',
-    }}>
-      Block editor for "{block.block_type}" will be available in the next update.
-    </div>
-  )
 }
 
 // ============================================================================
@@ -405,9 +399,10 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
                 onUpdate={handleUpdateBlock}
                 onDelete={handleDeleteBlock}
               >
-                <PlaceholderEditor
+                <BlockEditor
                   block={block}
                   onUpdate={(content) => handleUpdateBlock(block.block_id, content)}
+                  disabled={isLocked}
                 />
               </BlockContainer>
             ))}
