@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../AuthProvider'
-import { useToast } from '../Toast'
+import { showToast } from '../Toast'
 import { createClient } from '@/lib/supabase'
 import {
   Plus, Search, MoreVertical, Edit, Copy, FileDown, Download,
@@ -26,7 +26,6 @@ interface CreateModalProps {
 
 function CreateSpecModal({ products, customers, marketConfigs, onClose, onCreated }: CreateModalProps) {
   const { profile } = useAuth()
-  const { showToast } = useToast()
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
     product_id: '',
@@ -335,7 +334,6 @@ function ActionsMenu({ variant, position, onClose, onEdit, onDelete }: ActionsMe
 
 export default function SpecList() {
   const { profile } = useAuth()
-  const { showToast } = useToast()
 
   const [variants, setVariants] = useState<SpecVariant[]>([])
   const [products, setProducts] = useState<SpecProduct[]>([])
