@@ -45,6 +45,7 @@ export async function fetchSpecVariant(variantId: string): Promise<SpecVariantFu
       released_by_profile:profiles!spec_variants_released_by_fkey (id, full_name, email, role)
     `)
     .eq('variant_id', variantId)
+    .is('deleted_at', null)
     .single()
 
   if (error || !data) return null
@@ -74,6 +75,7 @@ export async function fetchSpecVariants(options?: {
       spec_customers (customer_id, name, brand_name),
       spec_market_configs (config_id, market_code, market_name)
     `)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
   if (options?.customerId) {
@@ -87,7 +89,7 @@ export async function fetchSpecVariants(options?: {
   if (options?.search) {
     const term = `%${options.search}%`
     query = query.or(
-      `doc_number.ilike.${term},type_designation.ilike.${term},umevs_part_no.ilike.${term},customer_part_no.ilike.${term}`
+      `type_designation.ilike.${term},umevs_part_no.ilike.${term},customer_part_no.ilike.${term}`
     )
   }
 

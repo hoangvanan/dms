@@ -86,7 +86,6 @@ export interface SpecVariant {
   umevs_part_no: string
   customer_part_no: string | null
   type_designation: string
-  doc_number: string
   spec_date: string | null
   status: SpecStatus
   current_index_rev: string | null
@@ -102,6 +101,7 @@ export interface SpecVariant {
   updated_by: string | null
   created_at: string
   updated_at: string
+  deleted_at: string | null
   // Joined relations
   spec_products?: SpecProduct
   spec_customers?: SpecCustomer
