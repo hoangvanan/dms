@@ -34,7 +34,13 @@ export async function POST(
       const puppeteer = (await import('puppeteer-core')).default
 
       browser = await puppeteer.launch({
-        args: chromium.args,
+        args: [
+          ...chromium.args,
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--single-process',
+          '--no-zygote',
+        ],
         executablePath: await chromium.executablePath(
           'https://github.com/Sparticuz/chromium/releases/download/v147.0.0/chromium-v147.0.0-pack.x64.tar'
         ),
