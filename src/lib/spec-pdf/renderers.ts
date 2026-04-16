@@ -32,15 +32,6 @@ function esc(str: string | null | undefined): string {
 // ============================================================================
 // 1. Cover Page — matches PoC layout exactly
 // ============================================================================
-//
-// Layout:
-//   - Company row (bold label + bold value)
-//   - Type / UMEVS Part-No. / Customer Part-No. / Date (normal)
-//   - Contact Sales / Mech. Eng. / Elec. Eng. / Doc. Eng. / Approved
-//   - Disclaimer paragraph
-//   - Customer Release / Date / Signature
-//   - Revision history table (4 empty rows — populated in future task)
-// ============================================================================
 
 export function renderCoverPage(
   variant: SpecVariantFull,
@@ -58,14 +49,12 @@ export function renderCoverPage(
   return `
     <div class="cover-content">
       <table class="cover-table">
-        <!-- Company row (both bold) -->
         <tr>
           <td class="label-bold">Company</td>
           <td class="value-bold">${esc(customerName)}</td>
         </tr>
         <tr class="spacer"><td></td><td></td></tr>
 
-        <!-- Identification rows -->
         <tr>
           <td class="label">Type:</td>
           <td class="value">${esc(typeDesignation)}</td>
@@ -84,7 +73,6 @@ export function renderCoverPage(
         </tr>
         <tr class="spacer"><td></td><td></td></tr>
 
-        <!-- Contact rows -->
         <tr>
           <td class="label">Contact Sales:</td>
           <td class="value">${esc(contacts.sales || '')}</td>
@@ -107,21 +95,18 @@ export function renderCoverPage(
         </tr>
       </table>
 
-      <!-- Disclaimer paragraph -->
       <p class="cover-disclaimer">
         We may ask you to return one signed copy of the specification for our records as having your approval. Unless you do not
         enter your objection to the latest specification issue without delay, your acceptance and release for production on the basis of
         this specification is deemed to be given
       </p>
 
-      <!-- Customer Release / Date / Signature -->
       <div class="cover-release-block">
         <div class="release-line">Customer Release:</div>
         <div class="release-line">Date:</div>
         <div class="release-line">Signature:</div>
       </div>
 
-      <!-- Revision history table (empty rows — will be populated in a future task) -->
       <table class="revision-history">
         <thead>
           <tr>
@@ -218,15 +203,18 @@ export function renderDataTable(content: DataTableContent): string {
 }
 
 // ============================================================================
-// 6. Image (base64 embedded)
+// 6. Image — uses signed URL (not base64) to reduce memory footprint
 // ============================================================================
 
+/**
+ * Renders an image block. The imageUrl must be a pre-created signed URL
+ * pointing to the spec-assets bucket. Pass null if the image is missing.
+ */
 export function renderImage(
   content: ImageContent,
-  base64Data: string | null,
-  mimeType: string
+  imageUrl: string | null
 ): string {
-  if (!base64Data) {
+  if (!imageUrl) {
     return `<div class="image-block"><p style="color:#999;font-size:8pt;">[Image not available]</p></div>`
   }
 
@@ -234,7 +222,7 @@ export function renderImage(
 
   return `
     <div class="image-block">
-      <img src="data:${mimeType};base64,${base64Data}" style="width:${width}%;" />
+      <img src="${esc(imageUrl)}" style="width:${width}%;" crossorigin="anonymous" />
       ${content.caption ? `<div class="caption">${esc(content.caption)}</div>` : ''}
     </div>
   `
@@ -258,16 +246,6 @@ export function renderPageBreak(): string {
 
 // ============================================================================
 // 9. Test Conditions (predefined)
-// ============================================================================
-//
-// PoC structure:
-//   N    General test conditions
-//        <prefix paragraph>
-//        <environmental KV rows>
-//   N.1  Input data
-//        <input KV rows>
-//   N.2  Output data
-//        <output KV rows>
 // ============================================================================
 
 export function renderTestConditions(
@@ -334,7 +312,6 @@ export function renderTestConditions(
     ${envHtml}
   `
 
-  // Subsections only rendered if they have content
   if (inputHtml) {
     html += `
       <div class="subsection-header">

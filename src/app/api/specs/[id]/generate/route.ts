@@ -49,9 +49,12 @@ export async function POST(
 
       const page = await browser.newPage()
 
+      // Images are referenced via signed URLs, so Chromium will fetch them.
+      // networkidle0 waits until there are no network connections for 500ms
+      // after setContent — ensures all images are fully loaded before PDF.
       await page.setContent(html, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000,
+        waitUntil: 'networkidle0',
+        timeout: 45000,
       })
 
       // Page numbering is rendered directly in the HTML footer, so we disable

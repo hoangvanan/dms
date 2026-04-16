@@ -9,7 +9,10 @@
 //   - Non-cover: customer/type/part-no header
 //   - Watermark "P R E L I M I N A R Y" (spaced letters) for non-released specs
 //   - Footer: www.unominda.com | Index / Rev.: X | Page N of M
-//     (Page numbers rendered directly in HTML — works for both HTML preview and PDF)
+//
+// Images are rendered via Supabase signed URLs (not base64) to reduce memory
+// usage when Chromium processes the HTML. This keeps the HTML input small and
+// lets Chromium stream images one at a time.
 // ============================================================================
 
 import { createServerClient } from '@/lib/supabase-server'
@@ -53,6 +56,9 @@ const COMPANY_ADDRESS_LINE_1 = 'Village – Saidpur Mohammadpur, Teh. – Farruk
 const COMPANY_ADDRESS_LINE_2 = 'Distt. – Gurugram, Haryana - 122505, India'
 const COMPANY_WEBSITE = 'www.unominda.com'
 
+// Signed URL expiry — PDF generation must complete within this window
+const SIGNED_URL_TTL_SECONDS = 300 // 5 minutes
+
 // ============================================================================
 // Fetch helpers
 // ============================================================================
@@ -86,37 +92,40 @@ async function fetchVariantForPdf(variantId: string): Promise<SpecVariantFull | 
   return { ...variant, blocks: blocks || [] } as SpecVariantFull
 }
 
-async function fetchImageBase64(filePath: string): Promise<{ data: string; mimeType: string } | null> {
+/**
+ * Create a short-lived signed URL for a file in the spec-assets bucket.
+ * Returns empty string on error so the caller can fall back gracefully.
+ */
+async function createSignedUrl(filePath: string): Promise<string> {
   const supabase = createServerClient()
 
   const { data, error } = await supabase.storage
     .from('spec-assets')
-    .download(filePath)
+    .createSignedUrl(filePath, SIGNED_URL_TTL_SECONDS)
 
-  if (error || !data) return null
+  if (error || !data?.signedUrl) {
+    console.error('createSignedUrl error:', filePath, error)
+    return ''
+  }
 
-  const arrayBuffer = await data.arrayBuffer()
-  const base64 = Buffer.from(arrayBuffer).toString('base64')
-  const mimeType = data.type || 'image/png'
-
-  return { data: base64, mimeType }
+  return data.signedUrl
 }
 
-async function fetchLogo(): Promise<string> {
+/**
+ * Find the shared logo and return its signed URL.
+ */
+async function fetchLogoUrl(): Promise<string> {
   const supabase = createServerClient()
 
   const { data: assets } = await supabase
     .from('spec_assets')
-    .select('file_path, mime_type')
+    .select('file_path')
     .eq('is_shared', true)
     .ilike('label', '%logo%')
     .limit(1)
 
   if (assets && assets.length > 0) {
-    const result = await fetchImageBase64(assets[0].file_path)
-    if (result) {
-      return `data:${result.mimeType};base64,${result.data}`
-    }
+    return await createSignedUrl(assets[0].file_path)
   }
 
   return ''
@@ -151,7 +160,7 @@ async function renderBlock(
     case 'image': {
       const imgContent = content as ImageContent
       if (!imgContent.asset_id) {
-        return renderImage(imgContent, null, 'image/png')
+        return renderImage(imgContent, null)
       }
       const supabase = createServerClient()
       const { data: asset } = await supabase
@@ -160,14 +169,10 @@ async function renderBlock(
         .eq('asset_id', imgContent.asset_id)
         .single()
 
-      if (!asset) return renderImage(imgContent, null, 'image/png')
+      if (!asset) return renderImage(imgContent, null)
 
-      const imgData = await fetchImageBase64(asset.file_path)
-      return renderImage(
-        imgContent,
-        imgData?.data || null,
-        imgData?.mimeType || asset.mime_type || 'image/png'
-      )
+      const signedUrl = await createSignedUrl(asset.file_path)
+      return renderImage(imgContent, signedUrl || null)
     }
 
     case 'text':
@@ -197,15 +202,11 @@ async function renderBlock(
 // Header / Footer builders
 // ============================================================================
 
-/**
- * Non-cover page header: compact, 3 lines with Company / Type / Part-No.
- * Matches PoC reference layout.
- */
-function buildPageHeader(variant: SpecVariantFull, logoDataUri: string): string {
+function buildPageHeader(variant: SpecVariantFull, logoUrl: string): string {
   const customerName = variant.spec_customers?.name || ''
   return `
     <div class="page-header">
-      ${logoDataUri ? `<img class="logo" src="${logoDataUri}" alt="Logo" />` : ''}
+      ${logoUrl ? `<img class="logo" src="${esc(logoUrl)}" alt="Logo" />` : ''}
       <div class="header-lines">
         <div class="header-line"><span class="hlabel">Company:</span>${esc(customerName)}</div>
         <div class="header-line"><span class="hlabel">Type:</span>${esc(variant.type_designation)}</div>
@@ -216,13 +217,10 @@ function buildPageHeader(variant: SpecVariantFull, logoDataUri: string): string 
   `
 }
 
-/**
- * Cover page header: company name + full address + "Specification" title.
- */
-function buildCoverHeader(logoDataUri: string): string {
+function buildCoverHeader(logoUrl: string): string {
   return `
     <div class="cover-header">
-      ${logoDataUri ? `<img class="logo" src="${logoDataUri}" alt="Logo" />` : ''}
+      ${logoUrl ? `<img class="logo" src="${esc(logoUrl)}" alt="Logo" />` : ''}
       <div class="cover-header-text">
         <div class="cover-company-name">${esc(COMPANY_NAME)}</div>
         <div class="cover-address">${esc(COMPANY_ADDRESS_LINE_1)}</div>
@@ -233,10 +231,6 @@ function buildCoverHeader(logoDataUri: string): string {
   `
 }
 
-/**
- * Footer (outside border). Page number rendered in HTML so it appears in both
- * the Preview (HTML) endpoint and the Puppeteer-generated PDF.
- */
 function buildFooter(variant: SpecVariantFull, pageIdx: number, totalPages: number): string {
   const indexRev = variant.current_index_rev || ''
   return `
@@ -265,7 +259,7 @@ export async function assembleSpecHtml(variantId: string): Promise<{
   if (!variant) return null
 
   const numberedBlocks = computeBlockNumbering(variant.blocks)
-  const logoDataUri = await fetchLogo()
+  const logoUrl = await fetchLogoUrl()
 
   // Render all blocks
   const fragments: string[] = []
@@ -307,11 +301,10 @@ export async function assembleSpecHtml(variantId: string): Promise<{
   }
 
   const watermarkText = getWatermarkText(variant.status)
-  const coverHeader = buildCoverHeader(logoDataUri)
-  const pageHeader = buildPageHeader(variant, logoDataUri)
+  const coverHeader = buildCoverHeader(logoUrl)
+  const pageHeader = buildPageHeader(variant, logoUrl)
   const totalPages = pages.length
 
-  // Each page wraps content in page-border (inside) + footer (outside)
   const pagesHtml = pages.map((page, idx) => {
     const header = page.isCover ? coverHeader : pageHeader
     const watermark = watermarkText
