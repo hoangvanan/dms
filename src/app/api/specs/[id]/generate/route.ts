@@ -38,13 +38,14 @@ export async function POST(
     let browser
     try {
       // Dynamic imports to avoid bundling issues
-      const chromium = (await import('@sparticuz/chromium')).default
+      const chromium = (await import('@sparticuz/chromium-min')).default
       const puppeteer = (await import('puppeteer-core')).default
 
-      // Configure chromium for serverless
       browser = await puppeteer.launch({
         args: [...chromium.args, '--disable-gpu'],
-        executablePath: await chromium.executablePath(),
+        executablePath: await chromium.executablePath(
+          'https://github.com/nicholasgasior/chromium-brotli-lambda-layer/releases/download/v133.0.0/chromium-v133.0.0-pack.tar'
+        ),
         headless: true,
       })
 
