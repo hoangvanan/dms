@@ -2,8 +2,8 @@
 import { useState, useRef } from 'react'
 import { Upload, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
-import { showToast } from '../Toast'
-import { useAuth } from '../AuthProvider'
+import { showToast } from '../../Toast'
+import { useAuth } from '../../AuthProvider'
 
 interface AssetUploaderProps {
   variantId: string | null  // null = shared asset
