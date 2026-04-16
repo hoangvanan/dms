@@ -2,12 +2,17 @@
 // Spec PDF — HTML Assembly
 // File: src/lib/spec-pdf/assemble.ts
 //
-// Queries all data for a variant, renders each block → HTML fragments,
-// assembles into a full HTML document ready for Puppeteer.
+// Builds the full HTML document matching PoC layout:
+//   - Content box: 196×275mm, 7mm top/left/right, 15mm bottom from page edges
+//   - Header inside border, footer outside
+//   - Cover page: company address (Gurugram) + large "Specification" title
+//   - Non-cover: customer/type/part-no header
+//   - Watermark "P R E L I M I N A R Y" (spaced letters) for non-released specs
+//   - Footer: www.unominda.com | Index / Rev.: X | (page number added by Puppeteer)
 // ============================================================================
 
 import { createServerClient } from '@/lib/supabase-server'
-import { computeBlockNumbering, resolveContacts, formatSpecDate, getWatermarkText } from '@/lib/spec-helpers'
+import { computeBlockNumbering, getWatermarkText } from '@/lib/spec-helpers'
 import { getPdfCss } from './styles'
 import {
   renderCoverPage,
@@ -25,7 +30,6 @@ import {
 } from './renderers'
 import type {
   SpecVariantFull,
-  SpecBlock,
   NumberedBlock,
   SectionHeaderContent,
   SubsectionHeaderContent,
@@ -40,7 +44,16 @@ import type {
 } from '@/types/specs'
 
 // ============================================================================
-// Fetch all data needed for PDF
+// Constants — company info (hardcoded per PoC reference)
+// ============================================================================
+
+const COMPANY_NAME = 'UNO MINDA EV SYSTEMS PVT. LTD.'
+const COMPANY_ADDRESS_LINE_1 = 'Village – Saidpur Mohammadpur, Teh. – Farrukhnagar'
+const COMPANY_ADDRESS_LINE_2 = 'Distt. – Gurugram, Haryana - 122505, India'
+const COMPANY_WEBSITE = 'www.unominda.com'
+
+// ============================================================================
+// Fetch helpers
 // ============================================================================
 
 async function fetchVariantForPdf(variantId: string): Promise<SpecVariantFull | null> {
@@ -72,10 +85,6 @@ async function fetchVariantForPdf(variantId: string): Promise<SpecVariantFull | 
   return { ...variant, blocks: blocks || [] } as SpecVariantFull
 }
 
-// ============================================================================
-// Fetch image as base64 for embedding
-// ============================================================================
-
 async function fetchImageBase64(filePath: string): Promise<{ data: string; mimeType: string } | null> {
   const supabase = createServerClient()
 
@@ -92,14 +101,9 @@ async function fetchImageBase64(filePath: string): Promise<{ data: string; mimeT
   return { data: base64, mimeType }
 }
 
-// ============================================================================
-// Fetch logo as base64
-// ============================================================================
-
 async function fetchLogo(): Promise<string> {
   const supabase = createServerClient()
 
-  // Try to find the logo in shared assets
   const { data: assets } = await supabase
     .from('spec_assets')
     .select('file_path, mime_type')
@@ -114,7 +118,6 @@ async function fetchLogo(): Promise<string> {
     }
   }
 
-  // Fallback: no logo
   return ''
 }
 
@@ -149,7 +152,6 @@ async function renderBlock(
       if (!imgContent.asset_id) {
         return renderImage(imgContent, null, 'image/png')
       }
-      // Fetch the asset record to get file_path
       const supabase = createServerClient()
       const { data: asset } = await supabase
         .from('spec_assets')
@@ -191,51 +193,57 @@ async function renderBlock(
 }
 
 // ============================================================================
-// Build non-cover page header HTML
+// Header / Footer builders
 // ============================================================================
 
+/**
+ * Non-cover page header: compact, 3 lines with Company / Type / Part-No.
+ * Matches PoC reference layout.
+ */
 function buildPageHeader(variant: SpecVariantFull, logoDataUri: string): string {
+  const customerName = variant.spec_customers?.name || ''
   return `
     <div class="page-header">
-      ${logoDataUri ? `<img class="logo" src="${logoDataUri}" />` : ''}
-      <div class="header-info">
-        <div class="company-name">UNO Minda EV Systems Pvt. Ltd.</div>
-        <div class="header-meta">Type: ${esc(variant.type_designation)}</div>
-        <div class="header-meta">Part-No.: ${esc(variant.umevs_part_no)}</div>
+      ${logoDataUri ? `<img class="logo" src="${logoDataUri}" alt="Logo" />` : ''}
+      <div class="header-lines">
+        <div class="header-line"><span class="hlabel">Company:</span>${esc(customerName)}</div>
+        <div class="header-line"><span class="hlabel">Type:</span>${esc(variant.type_designation)}</div>
+        <div class="header-line"><span class="hlabel">Part-No.:</span>${esc(variant.umevs_part_no)}</div>
       </div>
       <div class="header-title">Specification</div>
     </div>
   `
 }
 
-// ============================================================================
-// Build cover page header HTML
-// ============================================================================
-
+/**
+ * Cover page header: company name + full address + "Specification" title.
+ */
 function buildCoverHeader(logoDataUri: string): string {
   return `
     <div class="cover-header">
-      ${logoDataUri ? `<img class="logo" src="${logoDataUri}" />` : ''}
+      ${logoDataUri ? `<img class="logo" src="${logoDataUri}" alt="Logo" />` : ''}
       <div class="cover-header-text">
-        <div class="cover-company-name">UNO Minda EV Systems Pvt. Ltd.</div>
-        <div class="cover-address">VSIP II-A, Tan Uyen City, Binh Duong Province, Vietnam</div>
+        <div class="cover-company-name">${esc(COMPANY_NAME)}</div>
+        <div class="cover-address">${esc(COMPANY_ADDRESS_LINE_1)}</div>
+        <div class="cover-address">${esc(COMPANY_ADDRESS_LINE_2)}</div>
       </div>
       <div class="cover-title">Specification</div>
     </div>
   `
 }
 
-// ============================================================================
-// Build footer HTML (page number will be filled by Puppeteer)
-// ============================================================================
-
+/**
+ * Footer (outside border).
+ * Per PoC: www.unominda.com | Index / Rev.: <value> | Page X of Y
+ * Page X of Y is injected by Puppeteer's footerTemplate.
+ */
 function buildFooter(variant: SpecVariantFull): string {
-  const indexRev = variant.current_index_rev || 'Original'
+  const indexRev = variant.current_index_rev || ''
   return `
     <div class="page-footer">
-      <span>www.unominda.com</span>
-      <span>Index / Rev.: ${esc(indexRev)}</span>
-      <span class="page-number-placeholder"></span>
+      <span>${esc(COMPANY_WEBSITE)}</span>
+      <span class="footer-center">Index / Rev.: ${esc(indexRev)}</span>
+      <span></span>
     </div>
   `
 }
@@ -246,32 +254,27 @@ function esc(str: string | null | undefined): string {
 }
 
 // ============================================================================
-// Main assembly function
+// Main assembly
 // ============================================================================
 
 export async function assembleSpecHtml(variantId: string): Promise<{
   html: string
   variant: SpecVariantFull
 } | null> {
-  // 1. Fetch all data
   const variant = await fetchVariantForPdf(variantId)
   if (!variant) return null
 
-  // 2. Compute block numbering
   const numberedBlocks = computeBlockNumbering(variant.blocks)
-
-  // 3. Fetch logo
   const logoDataUri = await fetchLogo()
 
-  // 4. Render all blocks to HTML fragments
+  // Render all blocks
   const fragments: string[] = []
   for (const block of numberedBlocks) {
     const html = await renderBlock(block, variant)
     fragments.push(html)
   }
 
-  // 5. Split into pages at PAGE_BREAK markers
-  // Group fragments into pages. First page = cover (if first block is cover).
+  // Split into pages on PAGE_BREAK markers
   const pages: { isCover: boolean; html: string }[] = []
   let currentFragments: string[] = []
   let isFirstPage = true
@@ -280,7 +283,6 @@ export async function assembleSpecHtml(variantId: string): Promise<{
 
   for (const fragment of fragments) {
     if (fragment.includes('<!-- PAGE_BREAK -->')) {
-      // Commit current page
       if (currentFragments.length > 0) {
         pages.push({
           isCover: isFirstPage && hasCover,
@@ -293,7 +295,6 @@ export async function assembleSpecHtml(variantId: string): Promise<{
       currentFragments.push(fragment)
     }
   }
-  // Last page
   if (currentFragments.length > 0) {
     pages.push({
       isCover: isFirstPage && hasCover,
@@ -301,30 +302,30 @@ export async function assembleSpecHtml(variantId: string): Promise<{
     })
   }
 
-  // If no explicit page breaks, all content is on one or more auto pages
-  // Puppeteer handles overflow → new pages, but we need at least the header/footer structure
   if (pages.length === 0) {
     pages.push({ isCover: hasCover, html: '<p style="color:#999;">No content.</p>' })
   }
 
-  // 6. Watermark
   const watermarkText = getWatermarkText(variant.status)
-
-  // 7. Assemble full HTML
   const coverHeader = buildCoverHeader(logoDataUri)
   const pageHeader = buildPageHeader(variant, logoDataUri)
   const footer = buildFooter(variant)
 
-  const pagesHtml = pages.map((page, idx) => {
+  // Each page wraps content in page-border (inside) + footer (outside)
+  const pagesHtml = pages.map((page) => {
     const header = page.isCover ? coverHeader : pageHeader
-    const watermark = watermarkText ? `<div class="watermark">${esc(watermarkText)}</div>` : ''
+    const watermark = watermarkText
+      ? `<div class="watermark">${esc(watermarkText)}</div>`
+      : ''
 
     return `
       <div class="page">
-        ${header}
-        ${watermark}
-        <div class="page-content ${page.isCover ? 'cover-content' : ''}">
-          ${page.html}
+        <div class="page-border">
+          ${header}
+          ${watermark}
+          <div class="page-content ${page.isCover ? 'cover-content' : ''}">
+            ${page.html}
+          </div>
         </div>
         ${footer}
       </div>

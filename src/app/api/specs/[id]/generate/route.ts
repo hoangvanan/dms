@@ -1,18 +1,13 @@
 // ============================================================================
 // Spec PDF Generation API Route
 // File: src/app/api/specs/[id]/generate/route.ts
-//
-// POST /api/specs/{variantId}/generate
-// Generates PDF via Puppeteer, uploads to Supabase Storage,
-// updates spec_variants.current_pdf_path.
-// Returns the PDF as binary download.
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { assembleSpecHtml } from '@/lib/spec-pdf/assemble'
 
-export const maxDuration = 60 // Vercel Pro: 60s
+export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 
 export async function POST(
@@ -26,7 +21,6 @@ export async function POST(
   }
 
   try {
-    // 1. Assemble HTML
     const result = await assembleSpecHtml(variantId)
     if (!result) {
       return NextResponse.json({ error: 'Specification not found' }, { status: 404 })
@@ -34,10 +28,8 @@ export async function POST(
 
     const { html, variant } = result
 
-    // 2. Launch Puppeteer
     let browser
     try {
-      // Dynamic imports to avoid bundling issues
       const chromium = (await import('@sparticuz/chromium-min')).default
       const puppeteer = (await import('puppeteer-core')).default
 
@@ -51,13 +43,14 @@ export async function POST(
 
       const page = await browser.newPage()
 
-      // Set content and wait for images to load
       await page.setContent(html, {
         waitUntil: 'networkidle0',
         timeout: 30000,
       })
 
-      // Generate PDF
+      // Page numbering position: right side of footer
+      // Horizontal position matches the existing footer's right edge
+      // (page-footer is 7mm from left, spans 196mm wide, Page X of Y goes in right third)
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
@@ -65,13 +58,23 @@ export async function POST(
         displayHeaderFooter: true,
         headerTemplate: '<span></span>',
         footerTemplate: `
-          <div style="width:100%;font-size:7pt;font-family:Arial,sans-serif;color:#555;padding:0 15mm;display:flex;justify-content:flex-end;">
+          <div style="
+            width: 100%;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 7.5pt;
+            color: #333;
+            padding: 0 9mm 0 0;
+            display: flex;
+            justify-content: flex-end;
+            align-items: flex-start;
+            margin-top: -10mm;
+          ">
             <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
           </div>
         `,
         margin: {
           top: '0mm',
-          bottom: '14mm',
+          bottom: '15mm',
           left: '0mm',
           right: '0mm',
         },
@@ -80,7 +83,7 @@ export async function POST(
       await browser.close()
       browser = null
 
-      // 3. Upload PDF to Supabase Storage
+      // Upload PDF to storage
       const supabase = createServerClient()
       const timestamp = Date.now()
       const safeName = variant.type_designation.replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -95,16 +98,13 @@ export async function POST(
 
       if (uploadError) {
         console.error('PDF upload error:', uploadError)
-        // Still return the PDF even if storage upload fails
       } else {
-        // Update variant's current_pdf_path
         await supabase
           .from('spec_variants')
           .update({ current_pdf_path: storagePath })
           .eq('variant_id', variantId)
       }
 
-      // 4. Return PDF as binary response
       return new NextResponse(pdfBuffer, {
         status: 200,
         headers: {
@@ -127,7 +127,7 @@ export async function POST(
 }
 
 // ============================================================================
-// GET /api/specs/{variantId}/generate — Preview HTML (for debugging / preview tab)
+// GET /api/specs/{variantId}/generate — Preview HTML (no Puppeteer)
 // ============================================================================
 
 export async function GET(
@@ -146,7 +146,6 @@ export async function GET(
       return NextResponse.json({ error: 'Specification not found' }, { status: 404 })
     }
 
-    // Return raw HTML for preview
     return new NextResponse(result.html, {
       status: 200,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },

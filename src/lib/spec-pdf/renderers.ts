@@ -1,12 +1,9 @@
 // ============================================================================
 // Spec PDF — Block Renderers
 // File: src/lib/spec-pdf/renderers.ts
-//
-// Each function takes a block's content + context → returns an HTML string.
 // ============================================================================
 
 import type {
-  SpecBlock,
   SpecVariantFull,
   SpecContacts,
   SectionHeaderContent,
@@ -19,7 +16,6 @@ import type {
   PredefinedProtectiveContent,
   PredefinedGeneralIndicesContent,
   PredefinedWarningsContent,
-  NumberedBlock,
 } from '@/types/specs'
 import { resolveContacts, formatSpecDate } from '@/lib/spec-helpers'
 
@@ -34,7 +30,16 @@ function esc(str: string | null | undefined): string {
 }
 
 // ============================================================================
-// 1. Cover Page
+// 1. Cover Page — matches PoC layout exactly
+// ============================================================================
+//
+// Layout:
+//   - Company row (bold label + bold value)
+//   - Type / UMEVS Part-No. / Customer Part-No. / Date (normal)
+//   - Contact Sales / Mech. Eng. / Elec. Eng. / Doc. Eng. / Approved
+//   - Disclaimer paragraph
+//   - Customer Release / Date / Signature
+//   - Revision history table (4 empty rows — populated in future task)
 // ============================================================================
 
 export function renderCoverPage(
@@ -44,48 +49,94 @@ export function renderCoverPage(
   const customer = variant.spec_customers
   const contacts: SpecContacts = resolveContacts(variant, customer ?? null)
 
-  const infoRows = [
-    ['Customer', customer?.name || '—'],
-    ['Type Designation', variant.type_designation],
-    ['UMEVS Part-No.', variant.umevs_part_no],
-    ['Customer Part-No.', variant.customer_part_no || '—'],
-    ['Date', formatSpecDate(variant.spec_date)],
-    ['Index / Rev.', variant.current_index_rev || 'Original'],
-  ]
-
-  const contactRows = [
-    ['Sales', contacts.sales],
-    ['Mech. Engineering', contacts.mech_eng],
-    ['Elec. Engineering', contacts.elec_eng],
-    ['Doc. Engineering', contacts.doc_eng],
-    ['Approved', contacts.approver],
-  ]
+  const customerName = customer?.name || '—'
+  const typeDesignation = variant.type_designation || '—'
+  const umevsPartNo = variant.umevs_part_no || '—'
+  const customerPartNo = variant.customer_part_no || '—'
+  const date = formatSpecDate(variant.spec_date) || '—'
 
   return `
     <div class="cover-content">
-      <div class="cover-title-block">
-        <div class="spec-type">${esc(variant.type_designation)}</div>
-        <div class="spec-part-no">${esc(variant.umevs_part_no)}</div>
-      </div>
+      <table class="cover-table">
+        <!-- Company row (both bold) -->
+        <tr>
+          <td class="label-bold">Company</td>
+          <td class="value-bold">${esc(customerName)}</td>
+        </tr>
+        <tr class="spacer"><td></td><td></td></tr>
 
-      <div class="cover-section-title">Document Information</div>
-      <table class="cover-info-table">
-        ${infoRows.map(([label, value]) => `
-          <tr>
-            <td class="label">${esc(label)}</td>
-            <td class="value">${esc(value)}</td>
-          </tr>
-        `).join('')}
+        <!-- Identification rows -->
+        <tr>
+          <td class="label">Type:</td>
+          <td class="value">${esc(typeDesignation)}</td>
+        </tr>
+        <tr>
+          <td class="label">UMEVS Part-No.:</td>
+          <td class="value">${esc(umevsPartNo)}</td>
+        </tr>
+        <tr>
+          <td class="label">Customer Part-No.:</td>
+          <td class="value">${esc(customerPartNo)}</td>
+        </tr>
+        <tr>
+          <td class="label">Date:</td>
+          <td class="value">${esc(date)}</td>
+        </tr>
+        <tr class="spacer"><td></td><td></td></tr>
+
+        <!-- Contact rows -->
+        <tr>
+          <td class="label">Contact Sales:</td>
+          <td class="value">${esc(contacts.sales || '')}</td>
+        </tr>
+        <tr>
+          <td class="label">Contact Mech. Eng.:</td>
+          <td class="value">${esc(contacts.mech_eng || '')}</td>
+        </tr>
+        <tr>
+          <td class="label">Contact Elec. Eng.:</td>
+          <td class="value">${esc(contacts.elec_eng || '')}</td>
+        </tr>
+        <tr>
+          <td class="label">Contact Doc. Eng.:</td>
+          <td class="value">${esc(contacts.doc_eng || '')}</td>
+        </tr>
+        <tr>
+          <td class="label">Approved</td>
+          <td class="value">${esc(contacts.approver || '')}</td>
+        </tr>
       </table>
 
-      <div class="cover-section-title">Contacts</div>
-      <table class="cover-info-table">
-        ${contactRows.map(([label, value]) => `
+      <!-- Disclaimer paragraph -->
+      <p class="cover-disclaimer">
+        We may ask you to return one signed copy of the specification for our records as having your approval. Unless you do not
+        enter your objection to the latest specification issue without delay, your acceptance and release for production on the basis of
+        this specification is deemed to be given
+      </p>
+
+      <!-- Customer Release / Date / Signature -->
+      <div class="cover-release-block">
+        <div class="release-line">Customer Release:</div>
+        <div class="release-line">Date:</div>
+        <div class="release-line">Signature:</div>
+      </div>
+
+      <!-- Revision history table (empty rows — will be populated in a future task) -->
+      <table class="revision-history">
+        <thead>
           <tr>
-            <td class="label">${esc(label)}</td>
-            <td class="value">${esc(value || '—')}</td>
+            <th class="col-idx">Index /<br>Rev.</th>
+            <th class="col-date">Date</th>
+            <th class="col-name">Name</th>
+            <th>Detail</th>
           </tr>
-        `).join('')}
+        </thead>
+        <tbody>
+          <tr><td></td><td></td><td></td><td></td></tr>
+          <tr><td></td><td></td><td></td><td></td></tr>
+          <tr><td></td><td></td><td></td><td></td></tr>
+          <tr><td></td><td></td><td></td><td></td></tr>
+        </tbody>
       </table>
     </div>
   `
@@ -99,7 +150,12 @@ export function renderSectionHeader(
   content: SectionHeaderContent,
   number: string
 ): string {
-  return `<div class="section-header">${esc(number)} ${esc(content.title)}</div>`
+  return `
+    <div class="section-header">
+      <span class="sec-num">${esc(number)}</span>
+      <span class="sec-title">${esc(content.title)}</span>
+    </div>
+  `
 }
 
 // ============================================================================
@@ -110,7 +166,12 @@ export function renderSubsectionHeader(
   content: SubsectionHeaderContent,
   number: string
 ): string {
-  return `<div class="subsection-header">${esc(number)} ${esc(content.title)}</div>`
+  return `
+    <div class="subsection-header">
+      <span class="sec-num">${esc(number)}</span>
+      <span class="sec-title">${esc(content.title)}</span>
+    </div>
+  `
 }
 
 // ============================================================================
@@ -125,7 +186,7 @@ export function renderKeyValueTable(content: KeyValueTableContent): string {
     <table class="kv-table">
       ${rows.map(r => `
         <tr>
-          <td class="kv-label">${esc(r.label)}</td>
+          <td class="kv-label">${esc(r.label)}${r.label && !r.label.trim().endsWith(':') ? ':' : ''}</td>
           <td class="kv-value">${esc(r.value)}</td>
         </tr>
       `).join('')}
@@ -160,9 +221,6 @@ export function renderDataTable(content: DataTableContent): string {
 // 6. Image (base64 embedded)
 // ============================================================================
 
-/**
- * Renders an image block. The base64Data must be pre-fetched and passed in.
- */
 export function renderImage(
   content: ImageContent,
   base64Data: string | null,
@@ -187,22 +245,29 @@ export function renderImage(
 // ============================================================================
 
 export function renderText(content: TextContent): string {
-  // content.html is already HTML from tiptap — pass through
-  // but wrap in a styled div
   return `<div class="text-block">${content.html || ''}</div>`
 }
 
 // ============================================================================
-// 8. Page Break
+// 8. Page Break (sentinel marker)
 // ============================================================================
 
 export function renderPageBreak(): string {
-  // Sentinel — assemble.ts splits pages on this marker
   return `<!-- PAGE_BREAK -->`
 }
 
 // ============================================================================
 // 9. Test Conditions (predefined)
+// ============================================================================
+//
+// PoC structure:
+//   N    General test conditions
+//        <prefix paragraph>
+//        <environmental KV rows>
+//   N.1  Input data
+//        <input KV rows>
+//   N.2  Output data
+//        <output KV rows>
 // ============================================================================
 
 export function renderTestConditions(
@@ -210,61 +275,87 @@ export function renderTestConditions(
   number: string
 ): string {
   const envFields = [
-    ['Operating Temperature', content.operating_temp],
-    ['Storage Temperature', content.storage_temp],
-    ['Rated Max Ambient', content.rated_max_ambient],
+    ['Operating temperature', content.operating_temp],
+    ['Storage temperature', content.storage_temp],
+    ['Rated maximum ambient', content.rated_max_ambient],
     ['Operation Humidity', content.operation_humidity],
     ['Storage Humidity', content.storage_humidity],
-    ['Water Protection', content.water_protection],
-    ['Indication Protection', content.indication_protection],
-    ['Protection Class', content.protection_class],
+    ['Water protection', content.water_protection],
+    ['Indication of protection', content.indication_protection],
+    ['Protection class', content.protection_class],
     ['Operation Environment', content.operation_environment],
   ]
 
   const inputFields = [
-    ['Rated Input Voltage', content.rated_input_voltage],
-    ['Extended Input Voltage', content.extended_input_voltage],
-    ['Input Overvoltage Protection', content.input_overvoltage_protection],
-    ['Rated Input Frequency', content.rated_input_frequency],
-    ['Operable Frequency', content.operable_frequency],
-    ['Input Current', content.input_current],
-    ['Input Power', content.input_power],
-    ['Standby Power', content.standby_power],
+    ['Rated input voltage', content.rated_input_voltage],
+    ['Extended input voltage range', content.extended_input_voltage],
+    ['Input overvoltage protection', content.input_overvoltage_protection],
+    ['Rated input frequency', content.rated_input_frequency],
+    ['Operable frequency range', content.operable_frequency],
+    ['Input current', content.input_current],
+    ['Input power', content.input_power],
+    ['Standby power', content.standby_power],
   ]
 
   const outputFields = [
-    ['Charging Voltage Range', content.charging_voltage_range],
-    ['Battery Configuration', content.battery_configuration],
-    ['Charge Current', content.charge_current],
-    ['Reverse Current', content.reverse_current],
-    ['Max Efficiency', content.max_efficiency],
-    ['Power Factor', content.power_factor],
+    ['Charging voltage Range', content.charging_voltage_range],
+    ['Battery configuration', content.battery_configuration],
+    ['Charge current', content.charge_current],
+    ['Reverse current', content.reverse_current],
+    ['Max efficiency', content.max_efficiency],
+    ['Power factor (PF)', content.power_factor],
   ]
 
-  const renderGroup = (title: string, fields: (string | undefined)[][]) => {
-    const validFields = fields.filter(([, val]) => val)
-    if (validFields.length === 0) return ''
+  const renderKvRows = (fields: (string | undefined)[][]): string => {
+    const valid = fields.filter(([, v]) => v && String(v).trim())
+    if (valid.length === 0) return ''
     return `
-      <div class="test-conditions-section">
-        <div class="tc-group-title">${esc(title)}</div>
-        <table class="kv-table">
-          ${validFields.map(([label, value]) => `
-            <tr>
-              <td class="kv-label">${esc(label)}</td>
-              <td class="kv-value">${esc(value)}</td>
-            </tr>
-          `).join('')}
-        </table>
-      </div>
+      <table class="kv-table">
+        ${valid.map(([label, value]) => `
+          <tr>
+            <td class="kv-label">${esc(label)}:</td>
+            <td class="kv-value">${esc(value)}</td>
+          </tr>
+        `).join('')}
+      </table>
     `
   }
 
-  return `
-    <div class="section-header">${esc(number)} General Test Conditions</div>
-    ${renderGroup('Environmental', envFields)}
-    ${renderGroup('Input Data', inputFields)}
-    ${renderGroup('Output Data', outputFields)}
+  const envHtml = renderKvRows(envFields)
+  const inputHtml = renderKvRows(inputFields)
+  const outputHtml = renderKvRows(outputFields)
+
+  let html = `
+    <div class="section-header">
+      <span class="sec-num">${esc(number)}</span>
+      <span class="sec-title">General test conditions</span>
+    </div>
+    <p class="tc-prefix">All values listed below are measured at an ambient temperature of +20°C and after 15 minutes of operation.</p>
+    ${envHtml}
   `
+
+  // Subsections only rendered if they have content
+  if (inputHtml) {
+    html += `
+      <div class="subsection-header">
+        <span class="sec-num">${esc(number)}.1</span>
+        <span class="sec-title">Input data</span>
+      </div>
+      ${inputHtml}
+    `
+  }
+
+  if (outputHtml) {
+    html += `
+      <div class="subsection-header">
+        <span class="sec-num">${esc(number)}.2</span>
+        <span class="sec-title">Output data</span>
+      </div>
+      ${outputHtml}
+    `
+  }
+
+  return html
 }
 
 // ============================================================================
@@ -276,12 +367,19 @@ export function renderProtectiveFunctions(
   number: string
 ): string {
   const items = content.items || []
+  const header = `
+    <div class="section-header">
+      <span class="sec-num">${esc(number)}</span>
+      <span class="sec-title">Protective Functions</span>
+    </div>
+  `
+
   if (items.length === 0) {
-    return `<div class="section-header">${esc(number)} Protective Functions</div><p style="font-size:9pt;color:#666;">No protective functions defined.</p>`
+    return header + `<p style="font-size:9pt;color:#666;margin-left:8mm;">No protective functions defined.</p>`
   }
 
   return `
-    <div class="section-header">${esc(number)} Protective Functions</div>
+    ${header}
     <table class="protective-table">
       <thead>
         <tr>
@@ -312,12 +410,19 @@ export function renderGeneralIndices(
   number: string
 ): string {
   const clauses = (content.clauses || []).filter(c => c.enabled)
+  const header = `
+    <div class="section-header">
+      <span class="sec-num">${esc(number)}</span>
+      <span class="sec-title">General Indices</span>
+    </div>
+  `
+
   if (clauses.length === 0) {
-    return `<div class="section-header">${esc(number)} General Indices</div><p style="font-size:9pt;color:#666;">No clauses enabled.</p>`
+    return header + `<p style="font-size:9pt;color:#666;margin-left:8mm;">No clauses enabled.</p>`
   }
 
   return `
-    <div class="section-header">${esc(number)} General Indices</div>
+    ${header}
     <table class="indices-table">
       ${clauses.map(c => `
         <tr>
@@ -337,12 +442,17 @@ export function renderWarnings(
   content: PredefinedWarningsContent,
   number: string
 ): string {
-  if (!content.text) {
-    return `<div class="section-header">${esc(number)} Warnings</div>`
-  }
+  const header = `
+    <div class="section-header">
+      <span class="sec-num">${esc(number)}</span>
+      <span class="sec-title">Warnings</span>
+    </div>
+  `
+
+  if (!content.text) return header
 
   return `
-    <div class="section-header">${esc(number)} Warnings</div>
+    ${header}
     <div class="warnings-block">
       <p>${esc(content.text)}</p>
     </div>
