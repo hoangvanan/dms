@@ -109,7 +109,7 @@ function BlockEditor({ block, onUpdate, disabled, variant }: {
     case 'data_table':
       return <DataTableEditor content={content} onChange={onUpdate} disabled={disabled} />
     case 'image':
-      return <ImageBlockEditor content={content} onChange={onUpdate} disabled={disabled} />
+      return <ImageBlockEditor content={content} onChange={onUpdate} disabled={disabled} variantId={variant?.variant_id} />
     case 'text':
       return <TextBlockEditor content={content} onChange={onUpdate} disabled={disabled} />
     case 'page_break':
