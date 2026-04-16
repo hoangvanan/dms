@@ -44,7 +44,7 @@ export async function POST(
       const page = await browser.newPage()
 
       await page.setContent(html, {
-        waitUntil: 'networkidle0',
+        waitUntil: 'domcontentloaded',
         timeout: 30000,
       })
 
