@@ -186,7 +186,7 @@ export function getPdfCss(): string {
       color: rgba(200, 200, 200, 0.28);
       white-space: nowrap;
       pointer-events: none;
-      letter-spacing: 0.4em;
+      letter-spacing: 0.2em;
       z-index: 0;
     }
 

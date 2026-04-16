@@ -48,33 +48,16 @@ export async function POST(
         timeout: 30000,
       })
 
-      // Page numbering position: right side of footer
-      // Horizontal position matches the existing footer's right edge
-      // (page-footer is 7mm from left, spans 196mm wide, Page X of Y goes in right third)
+      // Page numbering is rendered directly in the HTML footer, so we disable
+      // Puppeteer's built-in header/footer to avoid duplication.
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
         preferCSSPageSize: true,
-        displayHeaderFooter: true,
-        headerTemplate: '<span></span>',
-        footerTemplate: `
-          <div style="
-            width: 100%;
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 7.5pt;
-            color: #333;
-            padding: 0 9mm 0 0;
-            display: flex;
-            justify-content: flex-end;
-            align-items: flex-start;
-            margin-top: -10mm;
-          ">
-            <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
-          </div>
-        `,
+        displayHeaderFooter: false,
         margin: {
           top: '0mm',
-          bottom: '15mm',
+          bottom: '0mm',
           left: '0mm',
           right: '0mm',
         },

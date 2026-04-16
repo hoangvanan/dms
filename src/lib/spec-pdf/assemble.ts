@@ -8,7 +8,8 @@
 //   - Cover page: company address (Gurugram) + large "Specification" title
 //   - Non-cover: customer/type/part-no header
 //   - Watermark "P R E L I M I N A R Y" (spaced letters) for non-released specs
-//   - Footer: www.unominda.com | Index / Rev.: X | (page number added by Puppeteer)
+//   - Footer: www.unominda.com | Index / Rev.: X | Page N of M
+//     (Page numbers rendered directly in HTML — works for both HTML preview and PDF)
 // ============================================================================
 
 import { createServerClient } from '@/lib/supabase-server'
@@ -233,17 +234,16 @@ function buildCoverHeader(logoDataUri: string): string {
 }
 
 /**
- * Footer (outside border).
- * Per PoC: www.unominda.com | Index / Rev.: <value> | Page X of Y
- * Page X of Y is injected by Puppeteer's footerTemplate.
+ * Footer (outside border). Page number rendered in HTML so it appears in both
+ * the Preview (HTML) endpoint and the Puppeteer-generated PDF.
  */
-function buildFooter(variant: SpecVariantFull): string {
+function buildFooter(variant: SpecVariantFull, pageIdx: number, totalPages: number): string {
   const indexRev = variant.current_index_rev || ''
   return `
     <div class="page-footer">
       <span>${esc(COMPANY_WEBSITE)}</span>
       <span class="footer-center">Index / Rev.: ${esc(indexRev)}</span>
-      <span></span>
+      <span>Page ${pageIdx} of ${totalPages}</span>
     </div>
   `
 }
@@ -309,14 +309,15 @@ export async function assembleSpecHtml(variantId: string): Promise<{
   const watermarkText = getWatermarkText(variant.status)
   const coverHeader = buildCoverHeader(logoDataUri)
   const pageHeader = buildPageHeader(variant, logoDataUri)
-  const footer = buildFooter(variant)
+  const totalPages = pages.length
 
   // Each page wraps content in page-border (inside) + footer (outside)
-  const pagesHtml = pages.map((page) => {
+  const pagesHtml = pages.map((page, idx) => {
     const header = page.isCover ? coverHeader : pageHeader
     const watermark = watermarkText
       ? `<div class="watermark">${esc(watermarkText)}</div>`
       : ''
+    const footer = buildFooter(variant, idx + 1, totalPages)
 
     return `
       <div class="page">
