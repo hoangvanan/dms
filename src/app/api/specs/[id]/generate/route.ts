@@ -42,11 +42,11 @@ export async function POST(
       const puppeteer = (await import('puppeteer-core')).default
 
       browser = await puppeteer.launch({
-        args: [...chromium.args, '--disable-gpu'],
+        args: chromium.args,
         executablePath: await chromium.executablePath(
-          'https://github.com/nicholasgasior/chromium-brotli-lambda-layer/releases/download/v133.0.0/chromium-v133.0.0-pack.tar'
+          'https://github.com/Sparticuz/chromium/releases/download/v147.0.0/chromium-v147.0.0-pack.x64.tar'
         ),
-        headless: true,
+        headless: chromium.headless,
       })
 
       const page = await browser.newPage()
