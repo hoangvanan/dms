@@ -74,6 +74,16 @@ function CreateSpecModal({ products, customers, marketConfigs, onClose, onCreate
 
       if (error) throw error
 
+      // Auto-insert Cover Page block (always first, cannot be deleted)
+      if (data) {
+        await supabase.from('spec_blocks').insert({
+          variant_id: data.variant_id,
+          block_type: 'predefined_cover',
+          sort_order: 0,
+          content: {},
+        })
+      }
+
       showToast('Specification created', 'success')
       onCreated()
       onClose()

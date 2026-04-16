@@ -49,6 +49,11 @@ import DataTableEditor from './blocks/DataTable'
 import ImageBlockEditor from './blocks/ImageBlock'
 import TextBlockEditor from './blocks/TextBlock'
 import PageBreakEditor from './blocks/PageBreak'
+import CoverPageEditor from './blocks/predefined/CoverPage'
+import TestConditionsEditor from './blocks/predefined/TestConditions'
+import ProtectiveFunctionsEditor from './blocks/predefined/ProtectiveFunctions'
+import GeneralIndicesEditor from './blocks/predefined/GeneralIndices'
+import WarningsEditor from './blocks/predefined/Warnings'
 
 // ============================================================================
 // Default content for new blocks
@@ -86,10 +91,12 @@ function getDefaultContent(blockType: BlockType): BlockContent {
 }
 
 // ============================================================================
-// Placeholder block editor (Task 6 will replace these)
+// Block editor router — routes each block_type to its editor component
 // ============================================================================
 
-function BlockEditor({ block, onUpdate, disabled }: { block: SpecBlock; onUpdate: (content: any) => void; disabled: boolean }) {
+function BlockEditor({ block, onUpdate, disabled, variant }: {
+  block: SpecBlock; onUpdate: (content: any) => void; disabled: boolean; variant: SpecVariantFull | null
+}) {
   const content = block.content as any
 
   switch (block.block_type) {
@@ -107,14 +114,23 @@ function BlockEditor({ block, onUpdate, disabled }: { block: SpecBlock; onUpdate
       return <TextBlockEditor content={content} onChange={onUpdate} disabled={disabled} />
     case 'page_break':
       return <PageBreakEditor />
+    case 'predefined_cover':
+      return <CoverPageEditor variant={variant} disabled={disabled} />
+    case 'predefined_test_conditions':
+      return <TestConditionsEditor content={content} onChange={onUpdate} disabled={disabled} />
+    case 'predefined_protective':
+      return <ProtectiveFunctionsEditor content={content} onChange={onUpdate} disabled={disabled} />
+    case 'predefined_general_indices':
+      return <GeneralIndicesEditor content={content} onChange={onUpdate} disabled={disabled} />
+    case 'predefined_warnings':
+      return <WarningsEditor content={content} onChange={onUpdate} disabled={disabled} />
     default:
-      // Predefined blocks — placeholder until Task 7
       return (
         <div style={{
           padding: '12px', background: 'var(--bg-primary)', borderRadius: '6px',
           fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'center',
         }}>
-          Predefined block editor for &ldquo;{block.block_type}&rdquo; will be available in the next update.
+          Unknown block type: {block.block_type}
         </div>
       )
   }
@@ -403,6 +419,7 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
                   block={block}
                   onUpdate={(content) => handleUpdateBlock(block.block_id, content)}
                   disabled={isLocked}
+                  variant={variant}
                 />
               </BlockContainer>
             ))}
