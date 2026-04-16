@@ -15,7 +15,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ArrowLeft, Save, Loader2, Eye, FileDown } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Eye, FileDown, CheckCircle, Send, RotateCcw } from 'lucide-react'
 import { useAuth } from '../AuthProvider'
 import { showToast } from '../Toast'
 import { createClient } from '@/lib/supabase'
@@ -24,6 +24,9 @@ import {
   fetchBlocksOrdered,
   computeBlockNumbering,
   canEdit,
+  canVerify,
+  canRelease,
+  canReject,
   getStatusColor,
   formatSpecDate,
 } from '@/lib/spec-helpers'
@@ -154,6 +157,7 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
   const [saving, setSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [generatingPdf, setGeneratingPdf] = useState(false)
+  const [workflowAction, setWorkflowAction] = useState<'verify' | 'release' | 'reject' | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -191,6 +195,17 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
   }, [blocks])
 
   const isLocked = variant ? !canEdit(variant).allowed : true
+
+  // ---- Workflow permission checks ----
+  const verifyCheck = variant && profile
+    ? canVerify(profile.role, profile.id, variant)
+    : { allowed: false, reason: '' }
+  const releaseCheck = variant && profile
+    ? canRelease(profile.role, profile.id, variant)
+    : { allowed: false, reason: '' }
+  const rejectCheck = variant && profile
+    ? canReject(profile.role, profile.id, variant)
+    : { allowed: false, reason: '' }
 
   // ---- Block operations ----
 
@@ -361,6 +376,225 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
     }
   }
 
+  // ---- Workflow actions ----
+
+  const handleVerify = async () => {
+    if (!variant || !profile || !verifyCheck.allowed) return
+    if (hasChanges) {
+      showToast('Please save your changes before verifying', 'error')
+      return
+    }
+
+    const ok = window.confirm(
+      `Verify this specification?\n\nStatus will change from "Processing" to "Verification".\n` +
+      `A different editor will need to release it (4-eyes rule).`
+    )
+    if (!ok) return
+
+    setWorkflowAction('verify')
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('spec_variants')
+        .update({
+          status: 'verification',
+          verified_by: profile.id,
+          verified_at: new Date().toISOString(),
+          updated_by: profile.id,
+        })
+        .eq('variant_id', variantId)
+
+      if (error) throw error
+
+      showToast('Specification verified', 'success')
+      await loadData()
+    } catch (err: any) {
+      showToast(err.message || 'Failed to verify', 'error')
+    } finally {
+      setWorkflowAction(null)
+    }
+  }
+
+  const handleRelease = async () => {
+    if (!variant || !profile || !releaseCheck.allowed) return
+
+    const ok = window.confirm(
+      `Release this specification?\n\nStatus will change from "Verification" to "Released".\n` +
+      `Once released, the specification cannot be edited. To make changes, a new revision must be created.`
+    )
+    if (!ok) return
+
+    setWorkflowAction('release')
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('spec_variants')
+        .update({
+          status: 'released',
+          released_by: profile.id,
+          released_at: new Date().toISOString(),
+          updated_by: profile.id,
+        })
+        .eq('variant_id', variantId)
+
+      if (error) throw error
+
+      showToast('Specification released', 'success')
+      await loadData()
+    } catch (err: any) {
+      showToast(err.message || 'Failed to release', 'error')
+    } finally {
+      setWorkflowAction(null)
+    }
+  }
+
+  const handleReject = async () => {
+    if (!variant || !profile || !rejectCheck.allowed) return
+
+    const ok = window.confirm(
+      `Reject this specification?\n\nStatus will return from "Verification" to "Processing".\n` +
+      `Verification will be cleared — the spec can be edited and re-verified.`
+    )
+    if (!ok) return
+
+    setWorkflowAction('reject')
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('spec_variants')
+        .update({
+          status: 'processing',
+          verified_by: null,
+          verified_at: null,
+          updated_by: profile.id,
+        })
+        .eq('variant_id', variantId)
+
+      if (error) throw error
+
+      showToast('Specification rejected and sent back to Processing', 'success')
+      await loadData()
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reject', 'error')
+    } finally {
+      setWorkflowAction(null)
+    }
+  }
+
+  // ---- Render helpers ----
+
+  const renderWorkflowButtons = () => {
+    if (!variant) return null
+
+    const btnBase = {
+      display: 'flex' as const,
+      alignItems: 'center' as const,
+      gap: '6px',
+      padding: '7px 12px',
+      borderRadius: '6px',
+      border: 'none',
+      fontSize: '12px',
+      fontWeight: 500,
+    }
+
+    // Processing → Verify button
+    if (variant.status === 'processing') {
+      const enabled = verifyCheck.allowed && !workflowAction && !hasChanges
+      return (
+        <button
+          onClick={handleVerify}
+          disabled={!enabled}
+          title={!verifyCheck.allowed ? verifyCheck.reason : (hasChanges ? 'Save changes first' : '')}
+          style={{
+            ...btnBase,
+            background: enabled ? '#3b82f6' : 'var(--bg-tertiary)',
+            color: enabled ? '#fff' : 'var(--text-secondary)',
+            cursor: enabled ? 'pointer' : 'not-allowed',
+          }}
+        >
+          {workflowAction === 'verify'
+            ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+            : <CheckCircle size={13} />}
+          Verify
+        </button>
+      )
+    }
+
+    // Verification → Release + Reject
+    if (variant.status === 'verification') {
+      return (
+        <>
+          <button
+            onClick={handleReject}
+            disabled={!rejectCheck.allowed || !!workflowAction}
+            title={!rejectCheck.allowed ? rejectCheck.reason : ''}
+            style={{
+              ...btnBase,
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              color: rejectCheck.allowed ? '#ef4444' : 'var(--text-secondary)',
+              cursor: rejectCheck.allowed && !workflowAction ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {workflowAction === 'reject'
+              ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+              : <RotateCcw size={13} />}
+            Reject
+          </button>
+          <button
+            onClick={handleRelease}
+            disabled={!releaseCheck.allowed || !!workflowAction}
+            title={!releaseCheck.allowed ? releaseCheck.reason : ''}
+            style={{
+              ...btnBase,
+              background: releaseCheck.allowed ? '#10b981' : 'var(--bg-tertiary)',
+              color: releaseCheck.allowed ? '#fff' : 'var(--text-secondary)',
+              cursor: releaseCheck.allowed && !workflowAction ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {workflowAction === 'release'
+              ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+              : <Send size={13} />}
+            Release
+          </button>
+        </>
+      )
+    }
+
+    // Released → no action buttons
+    return null
+  }
+
+  const renderStatusInfo = () => {
+    if (!variant) return null
+
+    // Sub-line under the variant title showing who verified/released
+    const parts: string[] = []
+
+    if (variant.verified_by_profile && variant.verified_at) {
+      const date = formatSpecDate(variant.verified_at)
+      parts.push(`Verified by ${variant.verified_by_profile.full_name || variant.verified_by_profile.email}${date ? ` on ${date}` : ''}`)
+    }
+
+    if (variant.released_by_profile && variant.released_at) {
+      const date = formatSpecDate(variant.released_at)
+      parts.push(`Released by ${variant.released_by_profile.full_name || variant.released_by_profile.email}${date ? ` on ${date}` : ''}`)
+    }
+
+    if (parts.length === 0) return null
+
+    return (
+      <div style={{
+        fontSize: '11px',
+        color: 'var(--text-secondary)',
+        marginTop: '4px',
+        fontStyle: 'italic',
+      }}>
+        {parts.join(' · ')}
+      </div>
+    )
+  }
+
   // ---- Render ----
 
   if (loading) {
@@ -396,11 +630,11 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
         </button>
 
         {/* Variant info */}
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '15px', fontWeight: 600 }}>
             {variant.type_designation}
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', gap: '12px', marginTop: '2px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', gap: '12px', marginTop: '2px', flexWrap: 'wrap' }}>
             <span>{variant.umevs_part_no}</span>
             {variant.spec_customers && <span>{variant.spec_customers.name}</span>}
             {variant.spec_market_configs && <span>{variant.spec_market_configs.market_code}</span>}
@@ -408,15 +642,21 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
           </div>
         </div>
 
-        {/* Status badge */}
-        <span style={{
-          fontSize: '11px', fontWeight: 500, padding: '3px 10px', borderRadius: '12px',
-          background: `${getStatusColor(variant.status)}20`,
-          color: getStatusColor(variant.status),
-          textTransform: 'capitalize',
-        }}>
-          {variant.status}
-        </span>
+        {/* Status + verify/release info */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+          <span style={{
+            fontSize: '11px', fontWeight: 500, padding: '3px 10px', borderRadius: '12px',
+            background: `${getStatusColor(variant.status)}20`,
+            color: getStatusColor(variant.status),
+            textTransform: 'capitalize',
+          }}>
+            {variant.status}
+          </span>
+          {renderStatusInfo()}
+        </div>
+
+        {/* Workflow buttons */}
+        {renderWorkflowButtons()}
 
         {/* Save button */}
         <button

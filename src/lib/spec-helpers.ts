@@ -392,6 +392,36 @@ export function canRelease(
 }
 
 /**
+ * Check if user can reject a spec (send back from 'verification' to 'processing').
+ * Rules:
+ * - Spec must be in 'verification' status
+ * - User must be editor or admin
+ * - 4-eyes: if user is editor, they cannot reject a spec they verified
+ * - Admin bypasses 4-eyes rule
+ */
+export function canReject(
+  userRole: UserRole,
+  userId: string,
+  variant: SpecVariant
+): { allowed: boolean; reason?: string } {
+  if (variant.status !== 'verification') {
+    return { allowed: false, reason: 'Only specs in "verification" status can be rejected' }
+  }
+
+  if (userRole !== 'admin' && userRole !== 'editor') {
+    return { allowed: false, reason: 'Only editors and admins can reject specs' }
+  }
+
+  // 4-eyes rule: editor who verified cannot reject their own verification
+  if (userRole === 'editor' && variant.verified_by === userId) {
+    return { allowed: false, reason: '4-eyes rule: a different editor must reject this spec' }
+  }
+
+  // Admin bypasses 4-eyes
+  return { allowed: true }
+}
+
+/**
  * Check if a spec can be edited (blocks/metadata).
  * Released specs are locked — must create a new revision.
  */
