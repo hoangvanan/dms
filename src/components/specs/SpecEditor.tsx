@@ -15,7 +15,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ArrowLeft, Save, Loader2 } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Eye, FileDown } from 'lucide-react'
 import { useAuth } from '../AuthProvider'
 import { showToast } from '../Toast'
 import { createClient } from '@/lib/supabase'
@@ -153,6 +153,7 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const [generatingPdf, setGeneratingPdf] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -310,6 +311,56 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
     }
   }
 
+  // ---- PDF operations ----
+
+  const handlePreviewPdf = () => {
+    // Opens HTML preview in a new tab (server renders the assembled HTML)
+    window.open(`/api/specs/${variantId}/generate`, '_blank')
+  }
+
+  const handleGeneratePdf = async () => {
+    if (hasChanges) {
+      showToast('Please save your changes before generating PDF', 'error')
+      return
+    }
+
+    setGeneratingPdf(true)
+    showToast('Generating PDF... This may take a moment.', 'info')
+
+    try {
+      const response = await fetch(`/api/specs/${variantId}/generate`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || `HTTP ${response.status}`)
+      }
+
+      // Download the PDF
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${variant?.type_designation?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'spec'}_spec.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      showToast('PDF generated and downloaded', 'success')
+
+      // Reload variant to get updated current_pdf_path
+      const v = await fetchSpecVariant(variantId)
+      if (v) setVariant(v)
+    } catch (err: any) {
+      console.error('PDF generation error:', err)
+      showToast(err.message || 'PDF generation failed', 'error')
+    } finally {
+      setGeneratingPdf(false)
+    }
+  }
+
   // ---- Render ----
 
   if (loading) {
@@ -386,7 +437,7 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
       </div>
 
       {/* Editor Area */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', paddingBottom: '80px' }}>
         {isLocked && (
           <div style={{
             padding: '10px 14px', marginBottom: '12px', borderRadius: '8px',
@@ -437,9 +488,67 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
           <div style={{
             textAlign: 'center', padding: '40px', color: 'var(--text-secondary)', fontSize: '13px',
           }}>
-            No blocks yet. Click "Add Block" to start building your specification.
+            No blocks yet. Click &ldquo;Add Block&rdquo; to start building your specification.
           </div>
         )}
+      </div>
+
+      {/* Bottom Bar — PDF actions */}
+      <div style={{
+        padding: '10px 20px',
+        borderTop: '1px solid var(--border)',
+        background: 'var(--bg-secondary)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: '10px',
+        flexShrink: 0,
+      }}>
+        {/* Current PDF indicator */}
+        {variant.current_pdf_path && (
+          <span style={{
+            fontSize: '11px', color: 'var(--text-secondary)', marginRight: 'auto',
+          }}>
+            Last PDF generated
+          </span>
+        )}
+
+        {/* Preview HTML */}
+        <button
+          onClick={handlePreviewPdf}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '7px 14px', borderRadius: '6px',
+            border: '1px solid var(--border)', background: 'var(--bg-tertiary)',
+            color: 'var(--text-primary)', fontSize: '12px', fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
+          <Eye size={14} />
+          Preview PDF
+        </button>
+
+        {/* Generate PDF */}
+        <button
+          onClick={handleGeneratePdf}
+          disabled={generatingPdf || hasChanges}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '7px 14px', borderRadius: '6px', border: 'none',
+            background: generatingPdf || hasChanges ? 'var(--bg-tertiary)' : '#10b981',
+            color: generatingPdf || hasChanges ? 'var(--text-secondary)' : '#fff',
+            fontSize: '12px', fontWeight: 500,
+            cursor: generatingPdf || hasChanges ? 'not-allowed' : 'pointer',
+          }}
+          title={hasChanges ? 'Save changes before generating PDF' : ''}
+        >
+          {generatingPdf ? (
+            <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+          ) : (
+            <FileDown size={14} />
+          )}
+          {generatingPdf ? 'Generating...' : 'Generate PDF'}
+        </button>
       </div>
 
       {/* CSS for spinner animation */}
