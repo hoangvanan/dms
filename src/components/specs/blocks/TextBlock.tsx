@@ -3,7 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import { Bold, Italic, Underline as UnderlineIcon } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { TextContent } from '@/types/specs'
 
 interface Props {
@@ -13,6 +13,10 @@ interface Props {
 }
 
 export default function TextBlockEditor({ content, onChange, disabled }: Props) {
+  // Track last HTML we emitted so we don't fire onChange for
+  // tiptap's internal normalization (e.g. <p></p> → <p><br></p>)
+  const lastEmittedHtml = useRef<string>(content.html || '<p></p>')
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -26,7 +30,13 @@ export default function TextBlockEditor({ content, onChange, disabled }: Props) 
     content: content.html || '<p></p>',
     editable: !disabled,
     onUpdate: ({ editor }) => {
-      onChange({ html: editor.getHTML() })
+      const newHtml = editor.getHTML()
+      // Only fire onChange when content actually differs from what we last emitted.
+      // This prevents spurious "changed" state on mount when tiptap normalizes HTML.
+      if (newHtml !== lastEmittedHtml.current) {
+        lastEmittedHtml.current = newHtml
+        onChange({ html: newHtml })
+      }
     },
   })
 

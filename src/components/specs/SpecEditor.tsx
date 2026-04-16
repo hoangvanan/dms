@@ -240,11 +240,21 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
   const handleUpdateBlock = async (blockId: string, content: any) => {
     if (isLocked) return
 
-    // Optimistic update
-    setBlocks(prev =>
-      prev.map(b => b.block_id === blockId ? { ...b, content } : b)
-    )
-    setHasChanges(true)
+    // Only mark as changed if content actually differs from what's in state.
+    // This prevents spurious "dirty" state when block editors (e.g. tiptap)
+    // normalize their content on mount and emit an onChange that is
+    // semantically equivalent to the loaded value.
+    setBlocks(prev => {
+      const target = prev.find(b => b.block_id === blockId)
+      if (target) {
+        const currentJson = JSON.stringify(target.content)
+        const nextJson = JSON.stringify(content)
+        if (currentJson !== nextJson) {
+          setHasChanges(true)
+        }
+      }
+      return prev.map(b => b.block_id === blockId ? { ...b, content } : b)
+    })
   }
 
   const handleDeleteBlock = async (blockId: string) => {
