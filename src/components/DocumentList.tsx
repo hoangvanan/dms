@@ -81,7 +81,7 @@ export default function DocumentList({ filterCategory, filterProject }: Document
     if (statusFilter) query = query.eq('status', statusFilter)
     if (categoryFilter) query = query.eq('category_id', categoryFilter)
 
-    const { data, count, error } = await query.limit(100)
+    const { data, count, error } = await query.limit(1000)
 
     if (error) {
       showToast('Failed to load documents', 'error')
