@@ -4,7 +4,7 @@ import { useAuth } from '../AuthProvider'
 import { showToast } from '../Toast'
 import { createClient } from '@/lib/supabase'
 import {
-  Plus, Search, Edit, Copy, Download,
+  Plus, Search, Edit, Copy, Download, Eye,
   History, CheckCircle, Send, Trash2, X, ChevronDown, FilePlus, RotateCcw
 } from 'lucide-react'
 import type {
@@ -535,13 +535,14 @@ interface ActionsMenuProps {
   onRevision: () => void
   onHistory: () => void
   onDownloadPdf: () => void
+  onPreviewPdf: () => void
   onVerify: () => void
   onRelease: () => void
   onReject: () => void
   onDelete: () => void
 }
 
-function ActionsMenu({ variant, position, userId, userRole, onClose, onEdit, onClone, onRevision, onHistory, onDownloadPdf, onVerify, onRelease, onReject, onDelete }: ActionsMenuProps) {
+function ActionsMenu({ variant, position, userId, userRole, onClose, onEdit, onClone, onRevision, onHistory, onDownloadPdf, onPreviewPdf, onVerify, onRelease, onReject, onDelete }: ActionsMenuProps) {
   useEffect(() => {
     const handleClick = () => onClose()
     const handleContextMenu = () => onClose()
@@ -608,6 +609,9 @@ function ActionsMenu({ variant, position, userId, userRole, onClose, onEdit, onC
         </button>
       )}
       <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
+      <button onClick={onPreviewPdf} style={itemStyle(false)}>
+        <Eye size={14} /> Preview PDF
+      </button>
       <button
         onClick={hasPdf ? onDownloadPdf : undefined}
         disabled={!hasPdf}
@@ -1018,6 +1022,7 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
           onRevision={() => { setRevisionSource(actionsMenu.variant); setActionsMenu(null) }}
           onHistory={() => { setHistoryVariant(actionsMenu.variant); setActionsMenu(null) }}
           onDownloadPdf={() => { handleDownloadPdf(actionsMenu.variant); setActionsMenu(null) }}
+          onPreviewPdf={() => { window.open(`/api/specs/${actionsMenu.variant.variant_id}/generate`, '_blank'); setActionsMenu(null) }}
           onVerify={() => { handleVerify(actionsMenu.variant); setActionsMenu(null) }}
           onRelease={() => { handleRelease(actionsMenu.variant); setActionsMenu(null) }}
           onReject={() => { handleReject(actionsMenu.variant); setActionsMenu(null) }}

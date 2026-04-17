@@ -25,8 +25,8 @@ export default function VersionHistoryModal({ variantId, specStatus, onClose, on
     setLoading(true)
     try {
       const data = await fetchVersions(variantId)
-      // Sort ascending (oldest first) for display
-      setVersions(data.reverse())
+      // Newest first (default from fetchVersions)
+      setVersions(data)
     } catch (err) {
       console.error('Failed to load versions:', err)
     } finally {
@@ -69,7 +69,7 @@ export default function VersionHistoryModal({ variantId, specStatus, onClose, on
         if (error) throw error
 
         // Also update current_index_rev on spec_variants if this is the latest version
-        const latestVersion = versions[versions.length - 1]
+        const latestVersion = versions[0]
         if (latestVersion && latestVersion.version_id === versionId) {
           await supabase
             .from('spec_variants')
@@ -194,7 +194,7 @@ export default function VersionHistoryModal({ variantId, specStatus, onClose, on
               </thead>
               <tbody>
                 {versions.map((v, idx) => {
-                  const isLatest = idx === versions.length - 1
+                  const isLatest = idx === 0
                   const canEditRow = isLatest && !isLocked
                   return (
                   <tr key={v.version_id} style={{ borderBottom: '1px solid var(--border)' }}>
