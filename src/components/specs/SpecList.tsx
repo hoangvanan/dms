@@ -10,7 +10,7 @@ import {
 import type {
   SpecVariant, SpecProduct, SpecCustomer, SpecMarketConfig, SpecStatus,
 } from '@/types/specs'
-import { fetchSpecVariants, fetchProducts, fetchCustomers, fetchMarketConfigs, getStatusColor, formatSpecDate } from '@/lib/spec-helpers'
+import { fetchSpecVariants, fetchProducts, fetchCustomers, fetchMarketConfigs, getStatusColor, formatSpecDate, cloneVariant } from '@/lib/spec-helpers'
 
 // ============================================================================
 // Create Spec Modal
@@ -256,6 +256,230 @@ function CreateSpecModal({ products, customers, marketConfigs, onClose, onCreate
 }
 
 // ============================================================================
+// Clone Spec Modal
+// ============================================================================
+
+interface CloneModalProps {
+  sourceVariant: SpecVariant
+  products: SpecProduct[]
+  customers: SpecCustomer[]
+  marketConfigs: SpecMarketConfig[]
+  onClose: () => void
+  onCloned: (newVariantId: string) => void
+}
+
+function CloneSpecModal({ sourceVariant, products, customers, marketConfigs, onClose, onCloned }: CloneModalProps) {
+  const { profile } = useAuth()
+  const [loading, setLoading] = useState(false)
+  const [form, setForm] = useState({
+    product_id: sourceVariant.product_id || '',
+    customer_id: sourceVariant.customer_id || '',
+    config_id: sourceVariant.config_id || '',
+    umevs_part_no: '',
+    customer_part_no: '',
+    type_designation: sourceVariant.type_designation,
+  })
+
+  const handleClone = async () => {
+    if (!form.product_id || !form.customer_id || !form.config_id) {
+      showToast('Please select Product, Customer, and Market', 'error')
+      return
+    }
+    if (!form.umevs_part_no.trim()) {
+      showToast('UMEVS Part No. is required', 'error')
+      return
+    }
+    if (!form.type_designation.trim()) {
+      showToast('Type Designation is required', 'error')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const newVariantId = await cloneVariant(
+        sourceVariant.variant_id,
+        {
+          product_id: form.product_id,
+          customer_id: form.customer_id,
+          config_id: form.config_id,
+          umevs_part_no: form.umevs_part_no.trim(),
+          customer_part_no: form.customer_part_no.trim() || null,
+          type_designation: form.type_designation.trim(),
+          spec_date: new Date().toISOString().split('T')[0],
+        },
+        profile!.id
+      )
+      showToast('Specification cloned successfully', 'success')
+      onCloned(newVariantId)
+      onClose()
+    } catch (err: any) {
+      console.error('Clone spec error:', err)
+      showToast(err.message || 'Failed to clone specification', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const inputStyle = {
+    width: '100%',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: '1px solid var(--border)',
+    background: 'var(--bg-primary)',
+    color: 'var(--text-primary)',
+    fontSize: '13px',
+    outline: 'none',
+  }
+
+  const labelStyle = {
+    fontSize: '12px',
+    fontWeight: 600 as const,
+    color: 'var(--text-secondary)',
+    marginBottom: '4px',
+    display: 'block' as const,
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+    }}>
+      <div style={{
+        background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border)',
+        width: '480px', maxHeight: '90vh', overflow: 'auto', padding: '24px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Clone Specification</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Source info */}
+        <div style={{
+          padding: '10px 12px', borderRadius: '6px', marginBottom: '16px',
+          background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
+        }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Cloning from</div>
+          <div style={{ fontSize: '13px', fontWeight: 500 }}>{sourceVariant.type_designation}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>{sourceVariant.umevs_part_no}</div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Product */}
+          <div>
+            <label style={labelStyle}>Product *</label>
+            <select
+              value={form.product_id}
+              onChange={(e) => setForm({ ...form, product_id: e.target.value })}
+              style={inputStyle}
+            >
+              <option value="">Select product...</option>
+              {products.map(p => (
+                <option key={p.product_id} value={p.product_id}>
+                  {p.product_family}{p.max_output_power ? ` (${p.max_output_power}W)` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Customer */}
+          <div>
+            <label style={labelStyle}>Customer *</label>
+            <select
+              value={form.customer_id}
+              onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
+              style={inputStyle}
+            >
+              <option value="">Select customer...</option>
+              {customers.map(c => (
+                <option key={c.customer_id} value={c.customer_id}>
+                  {c.name}{c.brand_name ? ` (${c.brand_name})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Market */}
+          <div>
+            <label style={labelStyle}>Market *</label>
+            <select
+              value={form.config_id}
+              onChange={(e) => setForm({ ...form, config_id: e.target.value })}
+              style={inputStyle}
+            >
+              <option value="">Select market...</option>
+              {marketConfigs.map(m => (
+                <option key={m.config_id} value={m.config_id}>
+                  {m.market_name} ({m.market_code})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Type Designation */}
+          <div>
+            <label style={labelStyle}>Type Designation *</label>
+            <input
+              value={form.type_designation}
+              onChange={(e) => setForm({ ...form, type_designation: e.target.value })}
+              placeholder="e.g. LEV1000/14/4.2/20/IN"
+              style={inputStyle}
+            />
+          </div>
+
+          {/* UMEVS Part No */}
+          <div>
+            <label style={labelStyle}>UMEVS Part No. *</label>
+            <input
+              value={form.umevs_part_no}
+              onChange={(e) => setForm({ ...form, umevs_part_no: e.target.value })}
+              placeholder="e.g. 34CH020016-0001E0"
+              style={inputStyle}
+            />
+          </div>
+
+          {/* Customer Part No */}
+          <div>
+            <label style={labelStyle}>Customer Part No.</label>
+            <input
+              value={form.customer_part_no}
+              onChange={(e) => setForm({ ...form, customer_part_no: e.target.value })}
+              placeholder="Optional"
+              style={inputStyle}
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '24px' }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '8px 16px', borderRadius: '6px', border: '1px solid var(--border)',
+              background: 'transparent', color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleClone}
+            disabled={loading}
+            style={{
+              padding: '8px 16px', borderRadius: '6px', border: 'none',
+              background: 'var(--accent)', color: '#fff', fontSize: '13px',
+              cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? 'Cloning...' : 'Clone Specification'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
 // Actions Menu (context menu for each row)
 // ============================================================================
 
@@ -264,10 +488,11 @@ interface ActionsMenuProps {
   position: { top: number; left: number }
   onClose: () => void
   onEdit: () => void
+  onClone: () => void
   onDelete: () => void
 }
 
-function ActionsMenu({ variant, position, onClose, onEdit, onDelete }: ActionsMenuProps) {
+function ActionsMenu({ variant, position, onClose, onEdit, onClone, onDelete }: ActionsMenuProps) {
   useEffect(() => {
     const handleClick = () => onClose()
     window.addEventListener('click', handleClick)
@@ -308,7 +533,7 @@ function ActionsMenu({ variant, position, onClose, onEdit, onDelete }: ActionsMe
       <button onClick={onEdit} style={itemStyle(false)}>
         <Edit size={14} /> Edit
       </button>
-      <button disabled style={itemStyle(true)}>
+      <button onClick={onClone} style={itemStyle(false)}>
         <Copy size={14} /> Clone
       </button>
       <button disabled style={itemStyle(true)}>
@@ -356,6 +581,7 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
   const [filterStatus, setFilterStatus] = useState('')
 
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [cloneSource, setCloneSource] = useState<SpecVariant | null>(null)
   const [actionsMenu, setActionsMenu] = useState<{ variant: SpecVariant; position: { top: number; left: number } } | null>(null)
 
   const isAdmin = profile?.role === 'admin'
@@ -631,7 +857,23 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
           position={actionsMenu.position}
           onClose={() => setActionsMenu(null)}
           onEdit={() => { handleEdit(actionsMenu.variant); setActionsMenu(null) }}
+          onClone={() => { setCloneSource(actionsMenu.variant); setActionsMenu(null) }}
           onDelete={() => { handleDelete(actionsMenu.variant); setActionsMenu(null) }}
+        />
+      )}
+
+      {cloneSource && (
+        <CloneSpecModal
+          sourceVariant={cloneSource}
+          products={products}
+          customers={customers}
+          marketConfigs={marketConfigs}
+          onClose={() => setCloneSource(null)}
+          onCloned={(newVariantId) => {
+            setCloneSource(null)
+            loadData()
+            if (onEditSpec) onEditSpec(newVariantId)
+          }}
         />
       )}
     </div>

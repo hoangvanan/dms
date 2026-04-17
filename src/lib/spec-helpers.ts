@@ -454,7 +454,98 @@ export function getNextRevision(current: string | null): string {
 }
 
 // ============================================================================
-// 5. UTILITY
+// 5. CLONE
+// ============================================================================
+
+/**
+ * Clone a spec variant: copy variant metadata + all blocks.
+ * Assets are shared by reference (Option A — no file duplication).
+ *
+ * @returns The new variant_id, or throws on error.
+ */
+export async function cloneVariant(
+  sourceVariantId: string,
+  overrides: {
+    product_id: string
+    customer_id: string
+    config_id: string
+    umevs_part_no: string
+    customer_part_no: string | null
+    type_designation: string
+    spec_date: string
+  },
+  userId: string
+): Promise<string> {
+  const supabase = createClient()
+
+  // 1. Fetch source variant
+  const { data: source, error: srcErr } = await supabase
+    .from('spec_variants')
+    .select('contacts_override, override_data')
+    .eq('variant_id', sourceVariantId)
+    .is('deleted_at', null)
+    .single()
+
+  if (srcErr || !source) {
+    throw new Error('Source specification not found')
+  }
+
+  // 2. Create new variant
+  const { data: newVariant, error: insertErr } = await supabase
+    .from('spec_variants')
+    .insert({
+      product_id: overrides.product_id,
+      customer_id: overrides.customer_id,
+      config_id: overrides.config_id,
+      umevs_part_no: overrides.umevs_part_no,
+      customer_part_no: overrides.customer_part_no,
+      type_designation: overrides.type_designation,
+      spec_date: overrides.spec_date,
+      status: 'processing',
+      current_index_rev: null,
+      contacts_override: source.contacts_override,
+      override_data: source.override_data ?? {},
+      cloned_from: sourceVariantId,
+      created_by: userId,
+      updated_by: userId,
+    })
+    .select('variant_id')
+    .single()
+
+  if (insertErr || !newVariant) {
+    throw new Error(insertErr?.message || 'Failed to create cloned specification')
+  }
+
+  // 3. Clone all blocks (preserve sort_order + content, new UUIDs auto-generated)
+  const blocks = await fetchBlocksOrdered(sourceVariantId)
+
+  if (blocks.length > 0) {
+    const clonedBlocks = blocks.map((b) => ({
+      variant_id: newVariant.variant_id,
+      block_type: b.block_type,
+      sort_order: b.sort_order,
+      content: b.content,
+    }))
+
+    const { error: blocksErr } = await supabase
+      .from('spec_blocks')
+      .insert(clonedBlocks)
+
+    if (blocksErr) {
+      // Rollback: soft-delete the new variant
+      await supabase
+        .from('spec_variants')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('variant_id', newVariant.variant_id)
+      throw new Error('Failed to clone blocks: ' + blocksErr.message)
+    }
+  }
+
+  return newVariant.variant_id
+}
+
+// ============================================================================
+// 6. UTILITY
 // ============================================================================
 
 /**
