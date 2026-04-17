@@ -15,7 +15,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ArrowLeft, Save, Loader2, Eye, FileDown, CheckCircle, Send, RotateCcw, History, FilePlus } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Eye, FileDown, Download, CheckCircle, Send, RotateCcw, History, FilePlus } from 'lucide-react'
 import { useAuth } from '../AuthProvider'
 import { showToast } from '../Toast'
 import { createClient } from '@/lib/supabase'
@@ -386,6 +386,9 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
         throw new Error(errData.error || `HTTP ${response.status}`)
       }
 
+      // Check if server-side upload succeeded
+      const uploadStatus = response.headers.get('X-PDF-Upload-Status')
+
       // Download the PDF
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
@@ -397,7 +400,11 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
 
-      showToast('PDF generated and downloaded', 'success')
+      if (uploadStatus === 'failed') {
+        showToast('PDF downloaded, but failed to save to server. Download button won\'t work until next successful generation.', 'error')
+      } else {
+        showToast('PDF generated and downloaded', 'success')
+      }
 
       // Reload variant to get updated current_pdf_path
       const v = await fetchSpecVariant(variantId)
@@ -407,6 +414,29 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
       showToast(err.message || 'PDF generation failed', 'error')
     } finally {
       setGeneratingPdf(false)
+    }
+  }
+
+  const handleDownloadPdf = async () => {
+    if (!variant?.current_pdf_path) return
+
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase.storage
+        .from('spec-assets')
+        .createSignedUrl(variant.current_pdf_path, 300)
+
+      if (error || !data?.signedUrl) throw new Error('Failed to get download URL')
+
+      const a = document.createElement('a')
+      a.href = data.signedUrl
+      a.download = `${variant.type_designation?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'spec'}_spec.pdf`
+      a.target = '_blank'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    } catch (err: any) {
+      showToast(err.message || 'Failed to download PDF', 'error')
     }
   }
 
@@ -833,7 +863,7 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
           <span style={{
             fontSize: '11px', color: 'var(--text-secondary)', marginRight: 'auto',
           }}>
-            Last PDF generated
+            PDF available
           </span>
         )}
 
@@ -849,8 +879,25 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
           }}
         >
           <Eye size={14} />
-          Preview PDF
+          Preview
         </button>
+
+        {/* Download PDF — only when PDF exists */}
+        {variant.current_pdf_path && (
+          <button
+            onClick={handleDownloadPdf}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '7px 14px', borderRadius: '6px',
+              border: '1px solid var(--border)', background: 'var(--bg-tertiary)',
+              color: 'var(--text-primary)', fontSize: '12px', fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            <Download size={14} />
+            Download PDF
+          </button>
+        )}
 
         {/* Generate PDF */}
         <button

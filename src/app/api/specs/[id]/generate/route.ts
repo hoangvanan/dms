@@ -81,6 +81,24 @@ export async function POST(
       const safeName = variant.type_designation.replace(/[^a-zA-Z0-9._-]/g, '_')
       const storagePath = `generated-pdfs/${variantId}/${timestamp}_${safeName}.pdf`
 
+      // Clean up previous PDF file (keep only latest per variant)
+      // But skip if the old path is referenced in spec_versions (revision snapshot)
+      let uploadFailed = false
+      if (variant.current_pdf_path) {
+        const { data: referencedVersions } = await supabase
+          .from('spec_versions')
+          .select('version_id')
+          .eq('generated_pdf_path', variant.current_pdf_path)
+          .limit(1)
+
+        const isReferenced = referencedVersions && referencedVersions.length > 0
+        if (!isReferenced) {
+          await supabase.storage
+            .from('spec-assets')
+            .remove([variant.current_pdf_path])
+        }
+      }
+
       const { error: uploadError } = await supabase.storage
         .from('spec-assets')
         .upload(storagePath, pdfBuffer, {
@@ -90,6 +108,7 @@ export async function POST(
 
       if (uploadError) {
         console.error('PDF upload error:', uploadError)
+        uploadFailed = true
       } else {
         await supabase
           .from('spec_variants')
@@ -102,6 +121,7 @@ export async function POST(
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="${safeName}_spec.pdf"`,
+          'X-PDF-Upload-Status': uploadFailed ? 'failed' : 'ok',
         },
       })
     } finally {

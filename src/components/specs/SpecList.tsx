@@ -4,13 +4,13 @@ import { useAuth } from '../AuthProvider'
 import { showToast } from '../Toast'
 import { createClient } from '@/lib/supabase'
 import {
-  Plus, Search, MoreVertical, Edit, Copy, FileDown, Download,
-  History, CheckCircle, Send, Trash2, X, ChevronDown, FilePlus
+  Plus, Search, Edit, Copy, Download,
+  History, CheckCircle, Send, Trash2, X, ChevronDown, FilePlus, RotateCcw
 } from 'lucide-react'
 import type {
   SpecVariant, SpecProduct, SpecCustomer, SpecMarketConfig, SpecStatus,
 } from '@/types/specs'
-import { fetchSpecVariants, fetchProducts, fetchCustomers, fetchMarketConfigs, getStatusColor, formatSpecDate, cloneVariant, canCreateRevision } from '@/lib/spec-helpers'
+import { fetchSpecVariants, fetchProducts, fetchCustomers, fetchMarketConfigs, getStatusColor, formatSpecDate, cloneVariant, canCreateRevision, canVerify, canRelease, canReject } from '@/lib/spec-helpers'
 import CreateRevisionModal from './blocks/predefined/CreateRevisionModal'
 import VersionHistoryModal from './blocks/predefined/VersionHistoryModal'
 
@@ -488,20 +488,36 @@ function CloneSpecModal({ sourceVariant, products, customers, marketConfigs, onC
 interface ActionsMenuProps {
   variant: SpecVariant
   position: { top: number; left: number }
+  userId: string
+  userRole: string
   onClose: () => void
   onEdit: () => void
   onClone: () => void
   onRevision: () => void
   onHistory: () => void
+  onDownloadPdf: () => void
+  onVerify: () => void
+  onRelease: () => void
+  onReject: () => void
   onDelete: () => void
 }
 
-function ActionsMenu({ variant, position, onClose, onEdit, onClone, onRevision, onHistory, onDelete }: ActionsMenuProps) {
+function ActionsMenu({ variant, position, userId, userRole, onClose, onEdit, onClone, onRevision, onHistory, onDownloadPdf, onVerify, onRelease, onReject, onDelete }: ActionsMenuProps) {
   useEffect(() => {
     const handleClick = () => onClose()
+    const handleContextMenu = () => onClose()
     window.addEventListener('click', handleClick)
-    return () => window.removeEventListener('click', handleClick)
+    window.addEventListener('contextmenu', handleContextMenu)
+    return () => {
+      window.removeEventListener('click', handleClick)
+      window.removeEventListener('contextmenu', handleContextMenu)
+    }
   }, [onClose])
+
+  const verifyCheck = canVerify(userRole as any, userId, variant)
+  const releaseCheck = canRelease(userRole as any, userId, variant)
+  const rejectCheck = canReject(userRole as any, userId, variant)
+  const hasPdf = !!variant.current_pdf_path
 
   const itemStyle = (disabled: boolean) => ({
     display: 'flex' as const,
@@ -518,21 +534,25 @@ function ActionsMenu({ variant, position, onClose, onEdit, onClone, onRevision, 
     textAlign: 'left' as const,
   })
 
+  // Ensure menu stays within viewport
+  const menuStyle: React.CSSProperties = {
+    position: 'fixed',
+    top: position.top,
+    left: position.left,
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border)',
+    borderRadius: '8px',
+    padding: '4px 0',
+    minWidth: '180px',
+    zIndex: 200,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+  }
+
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      style={{
-        position: 'fixed',
-        top: position.top,
-        left: position.left,
-        background: 'var(--bg-secondary)',
-        border: '1px solid var(--border)',
-        borderRadius: '8px',
-        padding: '4px 0',
-        minWidth: '180px',
-        zIndex: 200,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-      }}
+      onContextMenu={(e) => e.preventDefault()}
+      style={menuStyle}
     >
       <button onClick={onEdit} style={itemStyle(false)}>
         <Edit size={14} /> Edit
@@ -549,18 +569,38 @@ function ActionsMenu({ variant, position, onClose, onEdit, onClone, onRevision, 
         </button>
       )}
       <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
-      <button disabled style={itemStyle(true)}>
-        <FileDown size={14} /> Generate PDF
-      </button>
-      <button disabled style={itemStyle(true)}>
+      <button
+        onClick={hasPdf ? onDownloadPdf : undefined}
+        disabled={!hasPdf}
+        title={!hasPdf ? 'No PDF generated yet' : ''}
+        style={itemStyle(!hasPdf)}
+      >
         <Download size={14} /> Download PDF
       </button>
       <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
-      <button disabled style={itemStyle(true)}>
+      <button
+        onClick={verifyCheck.allowed ? onVerify : undefined}
+        disabled={!verifyCheck.allowed}
+        title={verifyCheck.reason || ''}
+        style={itemStyle(!verifyCheck.allowed)}
+      >
         <CheckCircle size={14} /> Verify
       </button>
-      <button disabled style={itemStyle(true)}>
+      <button
+        onClick={releaseCheck.allowed ? onRelease : undefined}
+        disabled={!releaseCheck.allowed}
+        title={releaseCheck.reason || ''}
+        style={itemStyle(!releaseCheck.allowed)}
+      >
         <Send size={14} /> Release
+      </button>
+      <button
+        onClick={rejectCheck.allowed ? onReject : undefined}
+        disabled={!rejectCheck.allowed}
+        title={rejectCheck.reason || ''}
+        style={itemStyle(!rejectCheck.allowed)}
+      >
+        <RotateCcw size={14} /> Reject
       </button>
       <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
       <button
@@ -654,13 +694,85 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
     }
   }
 
-  const handleActionsClick = (e: React.MouseEvent, variant: SpecVariant) => {
+  const handleContextMenu = (e: React.MouseEvent, variant: SpecVariant) => {
+    e.preventDefault()
     e.stopPropagation()
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     setActionsMenu({
       variant,
-      position: { top: rect.bottom + 4, left: rect.left - 140 },
+      position: { top: e.clientY, left: e.clientX },
     })
+  }
+
+  // Download PDF from storage
+  const handleDownloadPdf = async (variant: SpecVariant) => {
+    if (!variant.current_pdf_path) return
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase.storage
+        .from('spec-assets')
+        .createSignedUrl(variant.current_pdf_path, 300)
+      if (error || !data?.signedUrl) throw new Error('Failed to get download URL')
+      window.open(data.signedUrl, '_blank')
+    } catch (err: any) {
+      showToast(err.message || 'Failed to download PDF', 'error')
+    }
+  }
+
+  // Workflow: Verify
+  const handleVerify = async (variant: SpecVariant) => {
+    if (!profile) return
+    const ok = window.confirm(`Verify "${variant.type_designation}"?\nStatus will change to "Verification".`)
+    if (!ok) return
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('spec_variants')
+        .update({ status: 'verification', verified_by: profile.id, verified_at: new Date().toISOString(), updated_by: profile.id })
+        .eq('variant_id', variant.variant_id)
+      if (error) throw error
+      showToast('Specification verified', 'success')
+      loadData()
+    } catch (err: any) {
+      showToast(err.message || 'Failed to verify', 'error')
+    }
+  }
+
+  // Workflow: Release
+  const handleRelease = async (variant: SpecVariant) => {
+    if (!profile) return
+    const ok = window.confirm(`Release "${variant.type_designation}"?\nOnce released, it cannot be edited.`)
+    if (!ok) return
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('spec_variants')
+        .update({ status: 'released', released_by: profile.id, released_at: new Date().toISOString(), updated_by: profile.id })
+        .eq('variant_id', variant.variant_id)
+      if (error) throw error
+      showToast('Specification released', 'success')
+      loadData()
+    } catch (err: any) {
+      showToast(err.message || 'Failed to release', 'error')
+    }
+  }
+
+  // Workflow: Reject
+  const handleReject = async (variant: SpecVariant) => {
+    if (!profile) return
+    const ok = window.confirm(`Reject "${variant.type_designation}"?\nStatus will return to "Processing".`)
+    if (!ok) return
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('spec_variants')
+        .update({ status: 'processing', verified_by: null, verified_at: null, updated_by: profile.id })
+        .eq('variant_id', variant.variant_id)
+      if (error) throw error
+      showToast('Specification rejected', 'success')
+      loadData()
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reject', 'error')
+    }
   }
 
   // Get customer/product name helpers
@@ -769,12 +881,11 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
           <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '4px' }}>
             <thead>
               <tr>
-                {['Type / Part No', 'Product', 'Customer', 'Market', 'Rev', 'Status', 'Date', ''].map((h, i) => (
+                {['Type / Part No', 'Product', 'Customer', 'Market', 'Rev', 'Status', 'Date'].map((h, i) => (
                   <th key={i} style={{
                     padding: '10px 8px', textAlign: 'left', fontSize: '11px', fontWeight: 600,
                     color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px',
                     borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap',
-                    ...(h === '' ? { width: '40px' } : {}),
                     ...(h === 'Rev' ? { width: '50px' } : {}),
                     ...(h === 'Status' ? { width: '95px' } : {}),
                     ...(h === 'Date' ? { width: '85px' } : {}),
@@ -790,6 +901,7 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
                 <tr
                   key={v.variant_id}
                   onClick={() => handleEdit(v)}
+                  onContextMenu={(e) => handleContextMenu(e, v)}
                   style={{ cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(79,143,247,0.05)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
@@ -833,18 +945,6 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
                   <td style={{ padding: '10px 8px', fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                     {formatSpecDate(v.spec_date)}
                   </td>
-                  {/* Actions */}
-                  <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                    <button
-                      onClick={(e) => handleActionsClick(e, v)}
-                      style={{
-                        background: 'none', border: 'none', color: 'var(--text-secondary)',
-                        cursor: 'pointer', padding: '4px', borderRadius: '4px',
-                      }}
-                    >
-                      <MoreVertical size={16} />
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -863,15 +963,21 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
         />
       )}
 
-      {actionsMenu && (
+      {actionsMenu && profile && (
         <ActionsMenu
           variant={actionsMenu.variant}
           position={actionsMenu.position}
+          userId={profile.id}
+          userRole={profile.role}
           onClose={() => setActionsMenu(null)}
           onEdit={() => { handleEdit(actionsMenu.variant); setActionsMenu(null) }}
           onClone={() => { setCloneSource(actionsMenu.variant); setActionsMenu(null) }}
           onRevision={() => { setRevisionSource(actionsMenu.variant); setActionsMenu(null) }}
           onHistory={() => { setHistoryVariant(actionsMenu.variant); setActionsMenu(null) }}
+          onDownloadPdf={() => { handleDownloadPdf(actionsMenu.variant); setActionsMenu(null) }}
+          onVerify={() => { handleVerify(actionsMenu.variant); setActionsMenu(null) }}
+          onRelease={() => { handleRelease(actionsMenu.variant); setActionsMenu(null) }}
+          onReject={() => { handleReject(actionsMenu.variant); setActionsMenu(null) }}
           onDelete={() => { handleDelete(actionsMenu.variant); setActionsMenu(null) }}
         />
       )}
