@@ -892,10 +892,12 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
         />
       )}
 
-      {showHistoryModal && (
+      {showHistoryModal && variant && (
         <VersionHistoryModal
           variantId={variantId}
+          specStatus={variant.status}
           onClose={() => setShowHistoryModal(false)}
+          onRevisionUpdated={() => loadData()}
         />
       )}
     </div>

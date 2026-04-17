@@ -593,7 +593,7 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [cloneSource, setCloneSource] = useState<SpecVariant | null>(null)
   const [revisionSource, setRevisionSource] = useState<SpecVariant | null>(null)
-  const [historyVariantId, setHistoryVariantId] = useState<string | null>(null)
+  const [historyVariant, setHistoryVariant] = useState<SpecVariant | null>(null)
   const [actionsMenu, setActionsMenu] = useState<{ variant: SpecVariant; position: { top: number; left: number } } | null>(null)
 
   const isAdmin = profile?.role === 'admin'
@@ -871,7 +871,7 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
           onEdit={() => { handleEdit(actionsMenu.variant); setActionsMenu(null) }}
           onClone={() => { setCloneSource(actionsMenu.variant); setActionsMenu(null) }}
           onRevision={() => { setRevisionSource(actionsMenu.variant); setActionsMenu(null) }}
-          onHistory={() => { setHistoryVariantId(actionsMenu.variant.variant_id); setActionsMenu(null) }}
+          onHistory={() => { setHistoryVariant(actionsMenu.variant); setActionsMenu(null) }}
           onDelete={() => { handleDelete(actionsMenu.variant); setActionsMenu(null) }}
         />
       )}
@@ -902,10 +902,12 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
         />
       )}
 
-      {historyVariantId && (
+      {historyVariant && (
         <VersionHistoryModal
-          variantId={historyVariantId}
-          onClose={() => setHistoryVariantId(null)}
+          variantId={historyVariant.variant_id}
+          specStatus={historyVariant.status}
+          onClose={() => setHistoryVariant(null)}
+          onRevisionUpdated={() => loadData()}
         />
       )}
     </div>

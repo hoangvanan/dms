@@ -134,9 +134,9 @@ export function renderCoverPage(
       <table class="revision-history">
         <thead>
           <tr>
-            <th class="col-idx">Index /<br>Rev.</th>
-            <th class="col-date">Date</th>
-            <th class="col-name">Name</th>
+            <th class="col-idx" style="width:8%;">Index /<br>Rev.</th>
+            <th class="col-date" style="width:12%;">Date</th>
+            <th class="col-name" style="width:14%;">Name</th>
             <th>Detail</th>
           </tr>
         </thead>
