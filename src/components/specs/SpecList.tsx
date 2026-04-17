@@ -29,6 +29,7 @@ interface CreateModalProps {
 function CreateSpecModal({ products, customers, marketConfigs, onClose, onCreated }: CreateModalProps) {
   const { profile } = useAuth()
   const [loading, setLoading] = useState(false)
+  const [duplicateWarning, setDuplicateWarning] = useState('')
   const [form, setForm] = useState({
     product_id: '',
     customer_id: '',
@@ -38,6 +39,29 @@ function CreateSpecModal({ products, customers, marketConfigs, onClose, onCreate
     type_designation: '',
     spec_date: new Date().toISOString().split('T')[0],
   })
+
+  // Check for duplicate UMEVS Part No
+  useEffect(() => {
+    const partNo = form.umevs_part_no.trim()
+    if (!partNo) { setDuplicateWarning(''); return }
+    const timer = setTimeout(async () => {
+      try {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('spec_variants')
+          .select('variant_id, type_designation')
+          .eq('umevs_part_no', partNo)
+          .is('deleted_at', null)
+          .limit(1)
+        if (data && data.length > 0) {
+          setDuplicateWarning(`UMEVS Part No. already exists: "${data[0].type_designation}"`)
+        } else {
+          setDuplicateWarning('')
+        }
+      } catch { setDuplicateWarning('') }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [form.umevs_part_no])
 
   const handleCreate = async () => {
     if (!form.product_id || !form.customer_id || !form.config_id) {
@@ -202,8 +226,16 @@ function CreateSpecModal({ products, customers, marketConfigs, onClose, onCreate
               value={form.umevs_part_no}
               onChange={(e) => setForm({ ...form, umevs_part_no: e.target.value })}
               placeholder="e.g. 34CH020016-0001E0"
-              style={inputStyle}
+              style={{
+                ...inputStyle,
+                ...(duplicateWarning ? { borderColor: '#f59e0b' } : {}),
+              }}
             />
+            {duplicateWarning && (
+              <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '4px' }}>
+                ⚠ {duplicateWarning}
+              </div>
+            )}
           </div>
 
           {/* Customer Part No */}
