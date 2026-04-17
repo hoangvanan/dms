@@ -873,11 +873,12 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
       <div style={{
         padding: '12px 24px',
         display: 'flex',
+        flexDirection: 'column',
         gap: '10px',
-        alignItems: 'center',
         borderBottom: '1px solid var(--border)',
       }}>
-        <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
+        {/* Search */}
+        <div style={{ position: 'relative' }}>
           <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
           <input
             placeholder="Search by type, UMEVS part no, customer part no..."
@@ -890,18 +891,21 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
             }}
           />
         </div>
-        <select value={filterCustomer} onChange={(e) => setFilterCustomer(e.target.value)} style={selectStyle}>
-          <option value="">All Customers</option>
-          {customers.map(c => (
-            <option key={c.customer_id} value={c.customer_id}>{c.name}</option>
-          ))}
-        </select>
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={selectStyle}>
-          <option value="">All Status</option>
-          <option value="processing">Processing</option>
-          <option value="verification">Verification</option>
-          <option value="released">Released</option>
-        </select>
+        {/* Dropdown filters */}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <select value={filterCustomer} onChange={(e) => setFilterCustomer(e.target.value)} style={selectStyle}>
+            <option value="">All Customers</option>
+            {customers.map(c => (
+              <option key={c.customer_id} value={c.customer_id}>{c.name}</option>
+            ))}
+          </select>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={selectStyle}>
+            <option value="">All Status</option>
+            <option value="processing">Processing</option>
+            <option value="verification">Verification</option>
+            <option value="released">Released</option>
+          </select>
+        </div>
       </div>
 
       {/* Table */}
