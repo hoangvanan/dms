@@ -193,9 +193,12 @@ export default function VersionHistoryModal({ variantId, specStatus, onClose, on
                 </tr>
               </thead>
               <tbody>
-                {versions.map(v => (
+                {versions.map((v, idx) => {
+                  const isLatest = idx === versions.length - 1
+                  const canEditRow = isLatest && !isLocked
+                  return (
                   <tr key={v.version_id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    {/* Rev — editable */}
+                    {/* Rev — editable only for latest + not released */}
                     <td style={{ padding: '8px 6px', fontSize: '13px', fontWeight: 500 }}>
                       {isEditing(v.version_id, 'rev') ? (
                         <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
@@ -219,11 +222,11 @@ export default function VersionHistoryModal({ variantId, specStatus, onClose, on
                         </div>
                       ) : (
                         <span
-                          onClick={() => !isLocked && handleEditStart(v, 'rev')}
-                          style={editableCellStyle(!isLocked)}
-                          onMouseEnter={(e) => { if (!isLocked) e.currentTarget.style.borderColor = 'var(--border)' }}
+                          onClick={() => canEditRow && handleEditStart(v, 'rev')}
+                          style={editableCellStyle(canEditRow)}
+                          onMouseEnter={(e) => { if (canEditRow) e.currentTarget.style.borderColor = 'var(--border)' }}
                           onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent' }}
-                          title={isLocked ? '' : 'Click to edit revision'}
+                          title={canEditRow ? 'Click to edit revision' : ''}
                         >
                           {v.index_rev || '—'}
                         </span>
@@ -237,7 +240,7 @@ export default function VersionHistoryModal({ variantId, specStatus, onClose, on
                     <td style={{ padding: '8px 6px', fontSize: '12px' }}>
                       {(v as any).created_by_profile?.full_name || '—'}
                     </td>
-                    {/* Description — editable */}
+                    {/* Description — editable only for latest + not released */}
                     <td style={{ padding: '8px 6px', fontSize: '12px' }}>
                       {isEditing(v.version_id, 'description') ? (
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -266,11 +269,11 @@ export default function VersionHistoryModal({ variantId, specStatus, onClose, on
                         </div>
                       ) : (
                         <span
-                          onClick={() => !isLocked && handleEditStart(v, 'description')}
-                          style={editableCellStyle(!isLocked)}
-                          onMouseEnter={(e) => { if (!isLocked) e.currentTarget.style.borderColor = 'var(--border)' }}
+                          onClick={() => canEditRow && handleEditStart(v, 'description')}
+                          style={editableCellStyle(canEditRow)}
+                          onMouseEnter={(e) => { if (canEditRow) e.currentTarget.style.borderColor = 'var(--border)' }}
                           onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent' }}
-                          title={isLocked ? '' : 'Click to edit description'}
+                          title={canEditRow ? 'Click to edit description' : ''}
                         >
                           {v.change_description || '—'}
                         </span>
@@ -279,7 +282,7 @@ export default function VersionHistoryModal({ variantId, specStatus, onClose, on
                     {/* Actions */}
                     <td style={{ padding: '8px 6px' }}>
                       <div style={{ display: 'flex', gap: '4px' }}>
-                        {!isLocked && (
+                        {canEditRow && (
                           <button
                             onClick={() => handleEditStart(v, 'description')}
                             title="Edit description"
@@ -300,7 +303,8 @@ export default function VersionHistoryModal({ variantId, specStatus, onClose, on
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           )}
