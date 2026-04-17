@@ -35,7 +35,8 @@ function esc(str: string | null | undefined): string {
 
 export function renderCoverPage(
   variant: SpecVariantFull,
-  _content: Record<string, any>
+  _content: Record<string, any>,
+  versions?: { index_rev: string | null; created_at: string; created_by_name: string; change_description: string | null }[]
 ): string {
   const customer = variant.spec_customers
   const contacts: SpecContacts = resolveContacts(variant, customer ?? null)
@@ -45,6 +46,29 @@ export function renderCoverPage(
   const umevsPartNo = variant.umevs_part_no || '—'
   const customerPartNo = variant.customer_part_no || '—'
   const date = formatSpecDate(variant.spec_date) || '—'
+
+  // Build revision history rows — last 4, ascending order
+  const sortedVersions = (versions || [])
+    .slice()
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  const last4 = sortedVersions.slice(-4)
+
+  let revisionRows = ''
+  for (let i = 0; i < 4; i++) {
+    if (i < last4.length) {
+      const v = last4[i]
+      revisionRows += `
+        <tr>
+          <td>${esc(v.index_rev || '')}</td>
+          <td>${esc(formatSpecDate(v.created_at))}</td>
+          <td>${esc(v.created_by_name)}</td>
+          <td>${esc(v.change_description || '')}</td>
+        </tr>
+      `
+    } else {
+      revisionRows += `<tr><td></td><td></td><td></td><td></td></tr>`
+    }
+  }
 
   return `
     <div class="cover-content">
@@ -117,10 +141,7 @@ export function renderCoverPage(
           </tr>
         </thead>
         <tbody>
-          <tr><td></td><td></td><td></td><td></td></tr>
-          <tr><td></td><td></td><td></td><td></td></tr>
-          <tr><td></td><td></td><td></td><td></td></tr>
-          <tr><td></td><td></td><td></td><td></td></tr>
+          ${revisionRows}
         </tbody>
       </table>
     </div>

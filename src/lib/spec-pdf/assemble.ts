@@ -137,13 +137,14 @@ async function fetchLogoUrl(): Promise<string> {
 
 async function renderBlock(
   block: NumberedBlock,
-  variant: SpecVariantFull
+  variant: SpecVariantFull,
+  versions?: { index_rev: string | null; created_at: string; created_by_name: string; change_description: string | null }[]
 ): Promise<string> {
   const content = block.content as any
 
   switch (block.block_type) {
     case 'predefined_cover':
-      return renderCoverPage(variant, content)
+      return renderCoverPage(variant, content, versions)
 
     case 'section_header':
       return renderSectionHeader(content as SectionHeaderContent, block.number)
@@ -261,10 +262,30 @@ export async function assembleSpecHtml(variantId: string): Promise<{
   const numberedBlocks = computeBlockNumbering(variant.blocks)
   const logoUrl = await fetchLogoUrl()
 
+  // Fetch version history for revision table in cover page
+  const supabaseServer = createServerClient()
+  const { data: versionsRaw } = await supabaseServer
+    .from('spec_versions')
+    .select(`
+      index_rev,
+      created_at,
+      change_description,
+      created_by_profile:profiles!spec_versions_created_by_fkey (full_name)
+    `)
+    .eq('variant_id', variantId)
+    .order('created_at', { ascending: true })
+
+  const versions = (versionsRaw || []).map((v: any) => ({
+    index_rev: v.index_rev,
+    created_at: v.created_at,
+    created_by_name: v.created_by_profile?.full_name || '',
+    change_description: v.change_description,
+  }))
+
   // Render all blocks
   const fragments: string[] = []
   for (const block of numberedBlocks) {
-    const html = await renderBlock(block, variant)
+    const html = await renderBlock(block, variant, versions)
     fragments.push(html)
   }
 

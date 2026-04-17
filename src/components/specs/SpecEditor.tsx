@@ -15,7 +15,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ArrowLeft, Save, Loader2, Eye, FileDown, CheckCircle, Send, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Eye, FileDown, CheckCircle, Send, RotateCcw, History, FilePlus } from 'lucide-react'
 import { useAuth } from '../AuthProvider'
 import { showToast } from '../Toast'
 import { createClient } from '@/lib/supabase'
@@ -27,6 +27,7 @@ import {
   canVerify,
   canRelease,
   canReject,
+  canCreateRevision,
   getStatusColor,
   formatSpecDate,
 } from '@/lib/spec-helpers'
@@ -57,6 +58,8 @@ import TestConditionsEditor from './blocks/predefined/TestConditions'
 import ProtectiveFunctionsEditor from './blocks/predefined/ProtectiveFunctions'
 import GeneralIndicesEditor from './blocks/predefined/GeneralIndices'
 import WarningsEditor from './blocks/predefined/Warnings'
+import CreateRevisionModal from './blocks/predefined/CreateRevisionModal'
+import VersionHistoryModal from './blocks/predefined/VersionHistoryModal'
 
 // ============================================================================
 // Default content for new blocks
@@ -97,8 +100,9 @@ function getDefaultContent(blockType: BlockType): BlockContent {
 // Block editor router — routes each block_type to its editor component
 // ============================================================================
 
-function BlockEditor({ block, onUpdate, disabled, variant }: {
-  block: SpecBlock; onUpdate: (content: any) => void; disabled: boolean; variant: SpecVariantFull | null
+function BlockEditor({ block, onUpdate, disabled, variant, onVariantFieldChange }: {
+  block: SpecBlock; onUpdate: (content: any) => void; disabled: boolean; variant: SpecVariantFull | null;
+  onVariantFieldChange?: (fields: { spec_date?: string; contacts_override?: any }) => void
 }) {
   const content = block.content as any
 
@@ -118,7 +122,7 @@ function BlockEditor({ block, onUpdate, disabled, variant }: {
     case 'page_break':
       return <PageBreakEditor />
     case 'predefined_cover':
-      return <CoverPageEditor variant={variant} disabled={disabled} />
+      return <CoverPageEditor variant={variant} disabled={disabled} onVariantFieldChange={onVariantFieldChange} />
     case 'predefined_test_conditions':
       return <TestConditionsEditor content={content} onChange={onUpdate} disabled={disabled} />
     case 'predefined_protective':
@@ -158,6 +162,8 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
   const [hasChanges, setHasChanges] = useState(false)
   const [generatingPdf, setGeneratingPdf] = useState(false)
   const [workflowAction, setWorkflowAction] = useState<'verify' | 'release' | 'reject' | null>(null)
+  const [showRevisionModal, setShowRevisionModal] = useState(false)
+  const [showHistoryModal, setShowHistoryModal] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -297,6 +303,20 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
     setHasChanges(true)
   }
 
+  // Handle cover page editable fields (date, contacts) — queue for save
+  const handleVariantFieldChange = (fields: { spec_date?: string; contacts_override?: any }) => {
+    if (isLocked || !variant) return
+
+    setVariant(prev => {
+      if (!prev) return prev
+      const updated = { ...prev }
+      if (fields.spec_date !== undefined) updated.spec_date = fields.spec_date || null
+      if (fields.contacts_override !== undefined) updated.contacts_override = fields.contacts_override
+      return updated
+    })
+    setHasChanges(true)
+  }
+
   // Save all block changes (content + order)
   const handleSave = async () => {
     if (!variant || isLocked) return
@@ -321,10 +341,14 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
 
       if (error) throw error
 
-      // Update variant's updated_by
+      // Update variant's updated_by + any cover page editable fields
       await supabase
         .from('spec_variants')
-        .update({ updated_by: profile?.id })
+        .update({
+          updated_by: profile?.id,
+          spec_date: variant?.spec_date,
+          contacts_override: variant?.contacts_override,
+        })
         .eq('variant_id', variantId)
 
       setHasChanges(false)
@@ -571,7 +595,39 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
       )
     }
 
-    // Released → no action buttons
+    // Released → Create Revision + History
+    if (variant.status === 'released') {
+      return (
+        <>
+          <button
+            onClick={() => setShowHistoryModal(true)}
+            style={{
+              ...btnBase,
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+            }}
+          >
+            <History size={13} />
+            History
+          </button>
+          <button
+            onClick={() => setShowRevisionModal(true)}
+            style={{
+              ...btnBase,
+              background: '#3b82f6',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            <FilePlus size={13} />
+            Create Revision
+          </button>
+        </>
+      )
+    }
+
     return null
   }
 
@@ -665,6 +721,23 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
           {renderStatusInfo()}
         </div>
 
+        {/* History button (always visible) */}
+        {variant.status !== 'released' && (
+          <button
+            onClick={() => setShowHistoryModal(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '7px 12px', borderRadius: '6px',
+              border: '1px solid var(--border)', background: 'transparent',
+              color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 500,
+              cursor: 'pointer',
+            }}
+            title="Version History"
+          >
+            <History size={13} />
+          </button>
+        )}
+
         {/* Workflow buttons */}
         {renderWorkflowButtons()}
 
@@ -721,6 +794,7 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
                   onUpdate={(content) => handleUpdateBlock(block.block_id, content)}
                   disabled={isLocked}
                   variant={variant}
+                  onVariantFieldChange={handleVariantFieldChange}
                 />
               </BlockContainer>
             ))}
@@ -808,6 +882,22 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
           to { transform: rotate(360deg); }
         }
       `}</style>
+
+      {/* Modals */}
+      {showRevisionModal && variant && (
+        <CreateRevisionModal
+          variant={variant}
+          onClose={() => setShowRevisionModal(false)}
+          onCreated={() => loadData()}
+        />
+      )}
+
+      {showHistoryModal && (
+        <VersionHistoryModal
+          variantId={variantId}
+          onClose={() => setShowHistoryModal(false)}
+        />
+      )}
     </div>
   )
 }

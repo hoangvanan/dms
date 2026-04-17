@@ -544,9 +544,110 @@ export async function cloneVariant(
   return newVariant.variant_id
 }
 
+/**
+ * Create a new revision from a released spec.
+ *
+ * Steps:
+ * 1. Snapshot current state into spec_versions
+ * 2. Update variant: increment revision, reset status to processing, clear verify/release
+ *
+ * @param variantId - The released spec to create revision from
+ * @param newRevision - The revision letter (e.g. "A", "B") — user-editable
+ * @param changeDescription - Required description of what changed
+ * @param userId - Who is creating the revision
+ */
+export async function createRevision(
+  variantId: string,
+  newRevision: string,
+  changeDescription: string,
+  userId: string
+): Promise<void> {
+  const supabase = createClient()
+
+  // 1. Fetch current variant
+  const { data: variant, error: varErr } = await supabase
+    .from('spec_variants')
+    .select('*')
+    .eq('variant_id', variantId)
+    .is('deleted_at', null)
+    .single()
+
+  if (varErr || !variant) {
+    throw new Error('Specification not found')
+  }
+
+  if (variant.status !== 'released') {
+    throw new Error('Only released specifications can have new revisions')
+  }
+
+  // 2. Fetch current blocks for snapshot
+  const blocks = await fetchBlocksOrdered(variantId)
+
+  // 3. Create snapshot in spec_versions
+  const { error: snapErr } = await supabase
+    .from('spec_versions')
+    .insert({
+      variant_id: variantId,
+      index_rev: newRevision,
+      blocks_snapshot: blocks.map(b => ({ block_type: b.block_type, sort_order: b.sort_order, content: b.content })),
+      metadata_snapshot: {
+        umevs_part_no: variant.umevs_part_no,
+        customer_part_no: variant.customer_part_no,
+        type_designation: variant.type_designation,
+        spec_date: variant.spec_date,
+        product_id: variant.product_id,
+        customer_id: variant.customer_id,
+        config_id: variant.config_id,
+        contacts_override: variant.contacts_override,
+        override_data: variant.override_data,
+      },
+      change_description: changeDescription,
+      generated_pdf_path: variant.current_pdf_path,
+      created_by: userId,
+    })
+
+  if (snapErr) {
+    throw new Error('Failed to create version snapshot: ' + snapErr.message)
+  }
+
+  // 4. Update variant: new revision, reset status
+  const { error: updateErr } = await supabase
+    .from('spec_variants')
+    .update({
+      current_index_rev: newRevision,
+      status: 'processing',
+      verified_by: null,
+      verified_at: null,
+      released_by: null,
+      released_at: null,
+      updated_by: userId,
+    })
+    .eq('variant_id', variantId)
+
+  if (updateErr) {
+    throw new Error('Failed to update specification: ' + updateErr.message)
+  }
+}
+
 // ============================================================================
 // 6. UTILITY
 // ============================================================================
+
+/**
+ * Update the change_description of a version entry.
+ */
+export async function updateVersionDescription(
+  versionId: string,
+  description: string
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('spec_versions')
+    .update({ change_description: description })
+    .eq('version_id', versionId)
+
+  if (error) throw new Error('Failed to update description: ' + error.message)
+}
 
 /**
  * Format a date string for display (DD.MM.YYYY — European format used in specs).

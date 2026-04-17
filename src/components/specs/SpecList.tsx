@@ -5,12 +5,14 @@ import { showToast } from '../Toast'
 import { createClient } from '@/lib/supabase'
 import {
   Plus, Search, MoreVertical, Edit, Copy, FileDown, Download,
-  History, CheckCircle, Send, Trash2, X, ChevronDown
+  History, CheckCircle, Send, Trash2, X, ChevronDown, FilePlus
 } from 'lucide-react'
 import type {
   SpecVariant, SpecProduct, SpecCustomer, SpecMarketConfig, SpecStatus,
 } from '@/types/specs'
-import { fetchSpecVariants, fetchProducts, fetchCustomers, fetchMarketConfigs, getStatusColor, formatSpecDate, cloneVariant } from '@/lib/spec-helpers'
+import { fetchSpecVariants, fetchProducts, fetchCustomers, fetchMarketConfigs, getStatusColor, formatSpecDate, cloneVariant, canCreateRevision } from '@/lib/spec-helpers'
+import CreateRevisionModal from './blocks/predefined/CreateRevisionModal'
+import VersionHistoryModal from './blocks/predefined/VersionHistoryModal'
 
 // ============================================================================
 // Create Spec Modal
@@ -489,10 +491,12 @@ interface ActionsMenuProps {
   onClose: () => void
   onEdit: () => void
   onClone: () => void
+  onRevision: () => void
+  onHistory: () => void
   onDelete: () => void
 }
 
-function ActionsMenu({ variant, position, onClose, onEdit, onClone, onDelete }: ActionsMenuProps) {
+function ActionsMenu({ variant, position, onClose, onEdit, onClone, onRevision, onHistory, onDelete }: ActionsMenuProps) {
   useEffect(() => {
     const handleClick = () => onClose()
     window.addEventListener('click', handleClick)
@@ -536,14 +540,20 @@ function ActionsMenu({ variant, position, onClose, onEdit, onClone, onDelete }: 
       <button onClick={onClone} style={itemStyle(false)}>
         <Copy size={14} /> Clone
       </button>
+      <button onClick={onHistory} style={itemStyle(false)}>
+        <History size={14} /> Version History
+      </button>
+      {canCreateRevision(variant).allowed && (
+        <button onClick={onRevision} style={itemStyle(false)}>
+          <FilePlus size={14} /> Create Revision
+        </button>
+      )}
+      <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
       <button disabled style={itemStyle(true)}>
         <FileDown size={14} /> Generate PDF
       </button>
       <button disabled style={itemStyle(true)}>
         <Download size={14} /> Download PDF
-      </button>
-      <button disabled style={itemStyle(true)}>
-        <History size={14} /> Version History
       </button>
       <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
       <button disabled style={itemStyle(true)}>
@@ -582,6 +592,8 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [cloneSource, setCloneSource] = useState<SpecVariant | null>(null)
+  const [revisionSource, setRevisionSource] = useState<SpecVariant | null>(null)
+  const [historyVariantId, setHistoryVariantId] = useState<string | null>(null)
   const [actionsMenu, setActionsMenu] = useState<{ variant: SpecVariant; position: { top: number; left: number } } | null>(null)
 
   const isAdmin = profile?.role === 'admin'
@@ -858,6 +870,8 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
           onClose={() => setActionsMenu(null)}
           onEdit={() => { handleEdit(actionsMenu.variant); setActionsMenu(null) }}
           onClone={() => { setCloneSource(actionsMenu.variant); setActionsMenu(null) }}
+          onRevision={() => { setRevisionSource(actionsMenu.variant); setActionsMenu(null) }}
+          onHistory={() => { setHistoryVariantId(actionsMenu.variant.variant_id); setActionsMenu(null) }}
           onDelete={() => { handleDelete(actionsMenu.variant); setActionsMenu(null) }}
         />
       )}
@@ -874,6 +888,24 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
             loadData()
             if (onEditSpec) onEditSpec(newVariantId)
           }}
+        />
+      )}
+
+      {revisionSource && (
+        <CreateRevisionModal
+          variant={revisionSource}
+          onClose={() => setRevisionSource(null)}
+          onCreated={() => {
+            setRevisionSource(null)
+            loadData()
+          }}
+        />
+      )}
+
+      {historyVariantId && (
+        <VersionHistoryModal
+          variantId={historyVariantId}
+          onClose={() => setHistoryVariantId(null)}
         />
       )}
     </div>
