@@ -273,6 +273,7 @@ interface CloneModalProps {
 function CloneSpecModal({ sourceVariant, products, customers, marketConfigs, onClose, onCloned }: CloneModalProps) {
   const { profile } = useAuth()
   const [loading, setLoading] = useState(false)
+  const [duplicateWarning, setDuplicateWarning] = useState('')
   const [form, setForm] = useState({
     product_id: sourceVariant.product_id || '',
     customer_id: sourceVariant.customer_id || '',
@@ -281,6 +282,36 @@ function CloneSpecModal({ sourceVariant, products, customers, marketConfigs, onC
     customer_part_no: '',
     type_designation: sourceVariant.type_designation,
   })
+
+  // Check for duplicate UMEVS Part No
+  const checkDuplicate = useCallback(async (partNo: string) => {
+    if (!partNo.trim()) {
+      setDuplicateWarning('')
+      return
+    }
+    try {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('spec_variants')
+        .select('variant_id, type_designation')
+        .eq('umevs_part_no', partNo.trim())
+        .is('deleted_at', null)
+        .limit(1)
+      if (data && data.length > 0) {
+        setDuplicateWarning(`UMEVS Part No. already exists: "${data[0].type_designation}"`)
+      } else {
+        setDuplicateWarning('')
+      }
+    } catch {
+      setDuplicateWarning('')
+    }
+  }, [])
+
+  // Debounce duplicate check
+  useEffect(() => {
+    const timer = setTimeout(() => checkDuplicate(form.umevs_part_no), 500)
+    return () => clearTimeout(timer)
+  }, [form.umevs_part_no, checkDuplicate])
 
   const handleClone = async () => {
     if (!form.product_id || !form.customer_id || !form.config_id) {
@@ -437,8 +468,16 @@ function CloneSpecModal({ sourceVariant, products, customers, marketConfigs, onC
               value={form.umevs_part_no}
               onChange={(e) => setForm({ ...form, umevs_part_no: e.target.value })}
               placeholder="e.g. 34CH020016-0001E0"
-              style={inputStyle}
+              style={{
+                ...inputStyle,
+                ...(duplicateWarning ? { borderColor: '#f59e0b' } : {}),
+              }}
             />
+            {duplicateWarning && (
+              <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '4px' }}>
+                ⚠ {duplicateWarning}
+              </div>
+            )}
           </div>
 
           {/* Customer Part No */}
@@ -573,34 +612,34 @@ function ActionsMenu({ variant, position, userId, userRole, onClose, onEdit, onC
         onClick={hasPdf ? onDownloadPdf : undefined}
         disabled={!hasPdf}
         title={!hasPdf ? 'No PDF generated yet' : ''}
-        style={itemStyle(!hasPdf)}
+        style={{ ...itemStyle(!hasPdf), color: hasPdf ? '#3b82f6' : undefined }}
       >
-        <Download size={14} /> Download PDF
+        <Download size={14} color={hasPdf ? '#3b82f6' : undefined} /> Download PDF
       </button>
       <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
       <button
         onClick={verifyCheck.allowed ? onVerify : undefined}
         disabled={!verifyCheck.allowed}
         title={verifyCheck.reason || ''}
-        style={itemStyle(!verifyCheck.allowed)}
+        style={{ ...itemStyle(!verifyCheck.allowed), color: verifyCheck.allowed ? '#3b82f6' : undefined }}
       >
-        <CheckCircle size={14} /> Verify
+        <CheckCircle size={14} color={verifyCheck.allowed ? '#3b82f6' : undefined} /> Verify
       </button>
       <button
         onClick={releaseCheck.allowed ? onRelease : undefined}
         disabled={!releaseCheck.allowed}
         title={releaseCheck.reason || ''}
-        style={itemStyle(!releaseCheck.allowed)}
+        style={{ ...itemStyle(!releaseCheck.allowed), color: releaseCheck.allowed ? '#10b981' : undefined }}
       >
-        <Send size={14} /> Release
+        <Send size={14} color={releaseCheck.allowed ? '#10b981' : undefined} /> Release
       </button>
       <button
         onClick={rejectCheck.allowed ? onReject : undefined}
         disabled={!rejectCheck.allowed}
         title={rejectCheck.reason || ''}
-        style={itemStyle(!rejectCheck.allowed)}
+        style={{ ...itemStyle(!rejectCheck.allowed), color: rejectCheck.allowed ? '#f59e0b' : undefined }}
       >
-        <RotateCcw size={14} /> Reject
+        <RotateCcw size={14} color={rejectCheck.allowed ? '#f59e0b' : undefined} /> Reject
       </button>
       <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
       <button
@@ -841,7 +880,7 @@ export default function SpecList({ onEditSpec }: { onEditSpec?: (variantId: stri
         <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
           <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
           <input
-            placeholder="Search by type, part no..."
+            placeholder="Search by type, UMEVS part no, customer part no..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{

@@ -6,18 +6,20 @@ import { resolveContacts, formatSpecDate } from '@/lib/spec-helpers'
 interface Props {
   variant: SpecVariantFull | null
   disabled: boolean
-  onVariantFieldChange?: (fields: { spec_date?: string; contacts_override?: SpecContacts }) => void
+  onVariantFieldChange?: (fields: { spec_date?: string; contacts_override?: SpecContacts; customer_part_no?: string | null }) => void
 }
 
 export default function CoverPageEditor({ variant, disabled, onVariantFieldChange }: Props) {
   const [editingDate, setEditingDate] = useState(false)
   const [dateValue, setDateValue] = useState('')
+  const [customerPartNo, setCustomerPartNo] = useState('')
   const [contacts, setContacts] = useState<SpecContacts>({})
 
   // Sync local state when variant loads/changes
   useEffect(() => {
     if (!variant) return
     setDateValue(variant.spec_date || '')
+    setCustomerPartNo(variant.customer_part_no || '')
     const resolved = resolveContacts(variant, variant.spec_customers ?? null)
     setContacts(resolved)
   }, [variant])
@@ -112,7 +114,7 @@ export default function CoverPageEditor({ variant, disabled, onVariantFieldChang
         padding: '6px 10px', background: 'rgba(59,130,246,0.08)', borderRadius: '6px',
         border: '1px solid rgba(59,130,246,0.15)',
       }}>
-        Cover Page is auto-generated from variant metadata. Date and Contacts can be edited below.
+        Cover Page is auto-generated from variant metadata. Date, Customer Part No., and Contacts can be edited below.
       </div>
 
       {/* Variant Info */}
@@ -123,7 +125,28 @@ export default function CoverPageEditor({ variant, disabled, onVariantFieldChang
         {readOnlyField('Customer', customer?.name || '')}
         {readOnlyField('Type Designation', variant.type_designation)}
         {readOnlyField('UMEVS Part No.', variant.umevs_part_no)}
-        {readOnlyField('Customer Part No.', variant.customer_part_no || '')}
+
+        {/* Customer Part No — editable */}
+        <div style={fieldStyle}>
+          <span style={labelStyle}>Customer Part No.</span>
+          <div style={{ flex: 1 }}>
+            {disabled ? (
+              <span style={valueStyle}>{variant.customer_part_no || '—'}</span>
+            ) : (
+              <input
+                value={customerPartNo}
+                onChange={(e) => {
+                  setCustomerPartNo(e.target.value)
+                  if (onVariantFieldChange) {
+                    onVariantFieldChange({ customer_part_no: e.target.value.trim() || null })
+                  }
+                }}
+                placeholder="—"
+                style={editableInputStyle}
+              />
+            )}
+          </div>
+        </div>
 
         {/* Date — editable */}
         <div style={fieldStyle}>

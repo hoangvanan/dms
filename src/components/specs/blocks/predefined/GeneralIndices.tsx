@@ -47,13 +47,15 @@ export default function GeneralIndicesEditor({ content, onChange, disabled }: Pr
             }}
           >
             {/* Enable toggle */}
-            <input
-              type="checkbox"
-              checked={clause.enabled}
-              onChange={(e) => updateClause(i, 'enabled', e.target.checked)}
-              disabled={disabled}
-              style={{ marginTop: '4px', cursor: disabled ? 'not-allowed' : 'pointer' }}
-            />
+            <div style={{ flexShrink: 0, paddingTop: '4px' }}>
+              <input
+                type="checkbox"
+                checked={clause.enabled}
+                onChange={(e) => updateClause(i, 'enabled', e.target.checked)}
+                disabled={disabled}
+                style={{ margin: 0, cursor: disabled ? 'not-allowed' : 'pointer' }}
+              />
+            </div>
 
             {/* Clause ID */}
             <input
@@ -61,7 +63,8 @@ export default function GeneralIndicesEditor({ content, onChange, disabled }: Pr
               onChange={(e) => updateClause(i, 'id', e.target.value)}
               disabled={disabled}
               style={{
-                width: '50px', minWidth: '50px', padding: '4px 6px', borderRadius: '3px',
+                width: '50px', minWidth: '50px', flexShrink: 0,
+                padding: '4px 6px', borderRadius: '3px',
                 border: '1px solid var(--border)', background: 'var(--bg-primary)',
                 color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600,
                 outline: 'none', textAlign: 'center',
@@ -76,7 +79,7 @@ export default function GeneralIndicesEditor({ content, onChange, disabled }: Pr
               disabled={disabled}
               rows={2}
               style={{
-                flex: 1, padding: '4px 8px', borderRadius: '3px',
+                flex: 1, minWidth: 0, padding: '4px 8px', borderRadius: '3px',
                 border: '1px solid var(--border)', background: 'var(--bg-primary)',
                 color: 'var(--text-primary)', fontSize: '12px', outline: 'none',
                 resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.4',
@@ -88,8 +91,9 @@ export default function GeneralIndicesEditor({ content, onChange, disabled }: Pr
               <button
                 onClick={() => removeClause(i)}
                 style={{
-                  background: 'none', border: 'none', color: 'var(--text-secondary)',
-                  cursor: 'pointer', padding: '4px', display: 'flex', marginTop: '2px',
+                  flexShrink: 0, background: 'none', border: 'none',
+                  color: 'var(--text-secondary)', cursor: 'pointer',
+                  padding: '4px', display: 'flex', marginTop: '2px',
                 }}
               >
                 <Trash2 size={13} />

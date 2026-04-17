@@ -304,7 +304,7 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
   }
 
   // Handle cover page editable fields (date, contacts) — queue for save
-  const handleVariantFieldChange = (fields: { spec_date?: string; contacts_override?: any }) => {
+  const handleVariantFieldChange = (fields: { spec_date?: string; contacts_override?: any; customer_part_no?: string | null }) => {
     if (isLocked || !variant) return
 
     setVariant(prev => {
@@ -312,6 +312,7 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
       const updated = { ...prev }
       if (fields.spec_date !== undefined) updated.spec_date = fields.spec_date || null
       if (fields.contacts_override !== undefined) updated.contacts_override = fields.contacts_override
+      if (fields.customer_part_no !== undefined) updated.customer_part_no = fields.customer_part_no
       return updated
     })
     setHasChanges(true)
@@ -348,6 +349,7 @@ export default function SpecEditor({ variantId, onBack }: SpecEditorProps) {
           updated_by: profile?.id,
           spec_date: variant?.spec_date,
           contacts_override: variant?.contacts_override,
+          customer_part_no: variant?.customer_part_no,
         })
         .eq('variant_id', variantId)
 
